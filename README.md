@@ -1,6 +1,6 @@
 # treasury-smart-contracts
 
-whackrock‑treasury‑template/
+treasury-smart-contracts/
 ├─ contracts/                ← Solidity sources (0.8.25)
 │   ├─ core/
 │   │   ├─ WeightedTreasuryVault.sol    # generic ERC‑4626
