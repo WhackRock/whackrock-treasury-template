@@ -1,5 +1,5 @@
 // SPDX‑License‑Identifier: MIT
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.20;
 
 import { IPriceOracle } from "../interfaces/IPriceOracle.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
