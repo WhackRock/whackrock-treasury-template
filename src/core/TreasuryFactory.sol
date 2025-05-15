@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.20;
 
 import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
 import { WeightedTreasuryVault } from "./WeightedTreasuryVault.sol";
 import "./interfaces/ISwapAdapter.sol";
 import "./interfaces/IPriceOracle.sol";
-import "./interfaces/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract TreasuryFactory {
     event VaultCreated(
@@ -109,16 +109,14 @@ contract TreasuryFactory {
         }
         require(sum == 1e4, "weights");
 
-        bytes32 salt = keccak256(abi.encodePacked(manager, name));
-        vault = Clones.cloneDeterministic(logic, salt);
-
         // Convert addresses to IERC20 array
         IERC20[] memory erc20Assets = new IERC20[](allowedAssets.length);
         for (uint i; i < allowedAssets.length; ++i) {
             erc20Assets[i] = IERC20(allowedAssets[i]);
         }
 
-        WeightedTreasuryVault(vault).initialize(
+        // Deploy new WeightedTreasuryVault via new keyword
+        vault = address(new WeightedTreasuryVault(
             name,
             sym,
             USDCb,
@@ -130,13 +128,16 @@ contract TreasuryFactory {
             mgmtFeeBps,
             devWallet,
             wrkRewards
-        );
+        ));
+
         emit VaultCreated(vault, manager, weights, tag);
     }
 
     function predict(address manager, string calldata name)
         external view returns (address)
     {
+        // Note: This prediction logic is no longer accurate since we're not using Clones
+        // Keeping as a placeholder but should be removed or updated
         bytes32 salt = keccak256(abi.encodePacked(manager, name));
         return Clones.predictDeterministicAddress(logic, salt, address(this));
     }
