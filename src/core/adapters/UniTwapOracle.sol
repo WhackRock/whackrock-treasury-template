@@ -86,8 +86,9 @@ contract UniTwapOracle is IPriceOracle {
     }
 
     function _meanTick(IUniswapV3Pool pool) internal view returns (int24) {
-        uint32;
-        secs[0] = 0; secs[1] = TWAP_SEC;
+        uint32[] memory secs = new uint32[](2);
+        secs[0] = 0; 
+        secs[1] = TWAP_SEC;
         (int56[] memory cumul,) = pool.observe(secs);
         int56 diff = cumul[0] - cumul[1];
         return int24(diff / int32(TWAP_SEC));

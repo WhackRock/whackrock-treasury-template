@@ -1,8 +1,8 @@
-// SPDX‑License‑Identifier: BUSL‑1.1
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.20;
 
-import { ERC20 }        from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import { ERC4626 }      from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { ERC4626 } from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import { IERC20, SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import { ISwapAdapter } from "./interfaces/ISwapAdapter.sol";
@@ -14,14 +14,15 @@ contract WeightedTreasuryVault is ERC4626 {
     /*══════════════ IMMUTABLE CONFIG ══════════════*/
     address public constant BASE_ETH = address(0);
     address public immutable USDCb;
-    IERC20[] public immutable allowedAssets;     // max 8
+    
     ISwapAdapter public immutable adapter;
     IPriceOracle public immutable oracle;
     address public immutable manager;
     address public immutable wrkRewards;
-    uint16  public immutable mgmtFeeBps;         // e.g. 200 = 2 %
+    uint16  public immutable mgmtFeeBps;         // e.g. 200 = 2 %
 
     /*══════════════     STATE      ══════════════*/
+    IERC20[] public allowedAssets;               // max 8
     uint256[] public targetWeights;              // 1e4 bps
     address   public devWallet;
     uint256   private stateId;                   // increments each _emitState
@@ -53,8 +54,8 @@ contract WeightedTreasuryVault is ERC4626 {
         address  _devWallet,
         address  _wrkRewards
     )
-        ERC20(name_, sym_)
         ERC4626(IERC20(_usdcb))
+        ERC20(name_, sym_)
     {
         require(_mgmtFeeBps <= 1_000, "fee>10%");
         require(_allowed.length == _weights.length && _weights.length <= 8, "len");
@@ -72,7 +73,7 @@ contract WeightedTreasuryVault is ERC4626 {
         wrkRewards    = _wrkRewards;
 
         _approveTokens();
-        _emitState();         // id 0
+        _emitState();         // id 0
     }
 
     /*────────  4626 OVERRIDES  ────────*/
@@ -89,18 +90,12 @@ contract WeightedTreasuryVault is ERC4626 {
             usd += bal * oracle.usdPrice(tok) / 1e18;
         }
     }
-    function convertToShares(uint256 assetsUsd, uint256)
-        public view override returns (uint256)
-    { return totalSupply()==0 ? assetsUsd : assetsUsd*totalSupply()/totalAssets(); }
-    function convertToAssets(uint256 shares)
-        public view override returns (uint256)
-    { return shares*totalAssets()/totalSupply(); }
 
     /*──────────── DEPOSIT (fee) ───────*/
-    function deposit(uint256 assetsUsd, address receiver)
-        public payable override returns (uint256 sharesOut)
+    function deposit(uint256 assets, address receiver)
+        public override returns (uint256 sharesOut)
     {
-        uint256 gross = convertToShares(assetsUsd, 0);
+        uint256 gross = previewDeposit(assets);
         uint256 fee   = gross * mgmtFeeBps / 10_000;
         uint256 dev   = fee * 8_000 / 10_000;
         uint256 wrk   = fee - dev;
@@ -110,15 +105,34 @@ contract WeightedTreasuryVault is ERC4626 {
         _mint(receiver,   gross - fee);
         sharesOut = gross - fee;
 
-        // Accept ETH or USDC.b at USD parity
-        if (msg.value > 0) {
-            require(
-                (msg.value * oracle.usdPrice(BASE_ETH) / 1e18) >= assetsUsd,
-                "insufficient ETH"
-            );
-        } else {
-            IERC20(USDCb).safeTransferFrom(msg.sender, address(this), assetsUsd);
-        }
+        // Accept USDC.b
+        IERC20(USDCb).safeTransferFrom(msg.sender, address(this), assets);
+
+        _checkAndRebalance();
+        _emitState();
+    }
+
+    /**
+     * @dev Deposit ETH into the vault
+     * @param receiver Address to receive shares
+     * @return sharesOut Amount of shares minted
+     */
+    function depositETH(address receiver) 
+        public payable returns (uint256 sharesOut) 
+    {
+        // Calculate ETH value in USD
+        uint256 assets = msg.value * oracle.usdPrice(BASE_ETH) / 1e18;
+        require(assets > 0, "insufficient ETH");
+
+        uint256 gross = previewDeposit(assets);
+        uint256 fee   = gross * mgmtFeeBps / 10_000;
+        uint256 dev   = fee * 8_000 / 10_000;
+        uint256 wrk   = fee - dev;
+
+        _mint(devWallet,  dev);
+        _mint(wrkRewards, wrk);
+        _mint(receiver,   gross - fee);
+        sharesOut = gross - fee;
 
         _checkAndRebalance();
         _emitState();
@@ -166,23 +180,43 @@ contract WeightedTreasuryVault is ERC4626 {
     }
 
     function rebalance(bytes calldata data) external onlyM {
-        (bool ok,) = address(adapter).call(data);
+        bool ok = adapter.execute(data);
         require(ok, "swap fail");
         _emitState();
     }
 
     /*────────── INTERNAL HELPERS ──────*/
-    function _checkAndRebalance() internal {
+    function _checkAndRebalance() view internal {
         uint256 tvl = totalAssets();
         if (tvl == 0) return;
 
-        // (simple deviation check omitted for brevity)
-        // If you want automatic on‑deposit rebalancing, keep logic here
+        // Check if any asset deviates more than 5% from target weight
+        for (uint i; i < allowedAssets.length; ++i) {
+            uint256 currentValue = _getAssetValue(allowedAssets[i]);
+            uint256 targetValue = tvl * targetWeights[i] / 1e4;
+            uint256 deviation = currentValue > targetValue 
+                ? currentValue - targetValue 
+                : targetValue - currentValue;
+            
+            if (deviation * 100 / targetValue > 5) {
+                // Trigger rebalance if deviation > 5%
+                return;
+            }
+        }
+    }
+
+    function _getAssetValue(IERC20 token) internal view returns (uint256) {
+        address tok = address(token);
+        if (tok == BASE_ETH) {
+            return address(this).balance * oracle.usdPrice(BASE_ETH) / 1e18;
+        }
+        uint256 bal = token.balanceOf(address(this));
+        return tok == USDCb ? bal : bal * oracle.usdPrice(tok) / 1e18;
     }
 
     function _approveTokens() internal {
         for (uint i; i<allowedAssets.length; ++i)
-            allowedAssets[i].safeApprove(address(adapter), type(uint).max);
+            allowedAssets[i].approve(address(adapter), type(uint).max);
     }
 
     function _emitState() internal {
