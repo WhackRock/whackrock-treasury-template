@@ -5,25 +5,20 @@ pragma solidity ^0.8.20;
 import { WeightedTreasuryVault } from "./WeightedTreasuryVault.sol";
 import "./interfaces/ISwapAdapter.sol";
 import "./interfaces/IPriceOracle.sol";
+import "./interfaces/IWhackRockTreasuryFactory.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract TreasuryFactory {
-    event VaultCreated(
-        address vault,
-        address manager,
-        uint256[] weights,
-        bytes32 tag
-    );
-    event AllowedAssetsUpdated(address[] newAssets);
+contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory {
 
-    address public immutable logic;        // WeightedTreasuryVault impl
-    address public immutable USDCb;        // Base USDC.b address
-    ISwapAdapter public immutable adapter;
-    IPriceOracle public immutable oracle;
-    address public immutable wrkRewards;   // global 20 % sink
-    address public owner;                  // can update allowedAssets
 
-    address[] public allowedAssets;        // Master list of allowed assets
+    address public immutable override logic;        // WeightedTreasuryVault impl
+    address public immutable override USDCb;        // Base USDC.b address
+    ISwapAdapter public immutable override adapter;
+    IPriceOracle public immutable override oracle;
+    address public immutable override wrkRewards;   // global 20 % sink
+    address public override owner;                  // can update allowedAssets
+
+    address[] public override allowedAssets;        // Master list of allowed assets
 
     modifier onlyOwner() {
         require(msg.sender == owner, "not owner");
@@ -62,7 +57,7 @@ contract TreasuryFactory {
         allowedAssets = _allowedAssets;
     }
 
-    function setAllowedAssets(address[] calldata newAssets) external onlyOwner {
+    function setAllowedAssets(address[] calldata newAssets) external override onlyOwner {
         // require(newAssets.length <= 8, "too many assets");
         require(newAssets.length >= 2, "min 2 assets");
         
@@ -80,8 +75,79 @@ contract TreasuryFactory {
         emit AllowedAssetsUpdated(newAssets);
     }
 
-    function getAllowedAssets() external view returns (address[] memory) {
+    function getAllowedAssets() external view override returns (address[] memory) {
         return allowedAssets;
+    }
+
+    /**
+     * @notice Add a new asset to the list of allowed assets
+     * @param asset Address of the asset to add
+     */
+    function addAllowedAsset(address asset) external override onlyOwner {
+        // Check if asset already exists in the list
+        for (uint i = 0; i < allowedAssets.length; ++i) {
+            if (allowedAssets[i] == asset) {
+                return; // Asset already in list, nothing to do
+            }
+        }
+        
+        // Add new asset to the list
+        address[] memory newAssets = new address[](allowedAssets.length + 1);
+        for (uint i = 0; i < allowedAssets.length; ++i) {
+            newAssets[i] = allowedAssets[i];
+        }
+        newAssets[allowedAssets.length] = asset;
+        
+        // Update allowedAssets
+        allowedAssets = newAssets;
+        
+        // Emit event
+        emit AllowedAssetsUpdated(allowedAssets);
+    }
+    
+    /**
+     * @notice Remove an asset from the list of allowed assets
+     * @param asset Address of the asset to remove
+     */
+    function deleteAllowedAsset(address asset) external override onlyOwner {
+        // Cannot remove USDC.b
+        require(asset != USDCb, "cannot remove USDC.b");
+        
+        // Find index of asset in the list
+        uint assetIndex = type(uint).max; // Invalid index by default
+        for (uint i = 0; i < allowedAssets.length; ++i) {
+            if (allowedAssets[i] == asset) {
+                assetIndex = i;
+                break;
+            }
+        }
+        
+        // If asset not found, nothing to do
+        if (assetIndex == type(uint).max) {
+            return;
+        }
+        
+        // Create new array without the asset
+        address[] memory newAssets = new address[](allowedAssets.length - 1);
+        
+        // Copy elements before the index
+        for (uint i = 0; i < assetIndex; ++i) {
+            newAssets[i] = allowedAssets[i];
+        }
+        
+        // Copy elements after the index
+        for (uint i = assetIndex + 1; i < allowedAssets.length; ++i) {
+            newAssets[i - 1] = allowedAssets[i];
+        }
+        
+        // Verify we have at least 2 assets left
+        require(newAssets.length >= 2, "min 2 assets required");
+        
+        // Update allowedAssets
+        allowedAssets = newAssets;
+        
+        // Emit event
+        emit AllowedAssetsUpdated(allowedAssets);
     }
 
     /**
@@ -100,7 +166,7 @@ contract TreasuryFactory {
         uint16   mgmtFeeBps,
         address  devWallet,
         bytes32  tag
-    ) external returns (address vault) {
+    ) external override returns (address vault) {
         // Validate subset length
         require(allowedAssetsSubset.length <= 20, "max 20 assets");
         require(allowedAssetsSubset.length >= 2, "min 2 assets");

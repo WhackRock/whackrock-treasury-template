@@ -9,6 +9,7 @@ import { SafeERC20 }    from "@openzeppelin/contracts/token/ERC20/utils/SafeERC2
 
 import { ISwapAdapter } from "./interfaces/ISwapAdapter.sol";
 import { IPriceOracle } from "./interfaces/IPriceOracle.sol";
+import { IWeightedTreasuryVault } from "./interfaces/IWeightedTreasuryVault.sol";
 
 /**
  * @title WeightedTreasuryVault
@@ -17,7 +18,7 @@ import { IPriceOracle } from "./interfaces/IPriceOracle.sol";
  *          • Emits NeedsRebalance if any asset drifts ±2 %  
  *          • Supports **basket withdraw** _and_ **single-asset withdraw**
  */
-contract WeightedTreasuryVault is ERC4626 {
+contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault {
     using SafeERC20 for IERC20;
 
     /*══════════════ CONFIG ══════════════*/

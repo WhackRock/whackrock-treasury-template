@@ -1,5 +1,5 @@
                    ┌───────────────────┐
-                   │  TreasuryFactory  │
+                   │  WhackRockTreasuryFactory  │
                    └─────────┬─────────┘
                              │ creates
                              ▼
