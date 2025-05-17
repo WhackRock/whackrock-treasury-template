@@ -71,28 +71,10 @@ contract DeployScript is Script {
         console.log("Deploying UniAdapter...");
         UniAdapter adapter = new UniAdapter(universalRouterAddress);
         console.log("UniAdapter deployed at:", address(adapter));
-        
-        // Step 3: Deploy WeightedTreasuryVault implementation (as template)
-        console.log("Deploying WeightedTreasuryVault implementation...");
-        WeightedTreasuryVault vaultImplementation = new WeightedTreasuryVault(
-            "IMPLEMENTATION - DO NOT USE", 
-            "IMPL",
-            usdcAddress,
-            new IERC20[](0),  // Empty allowed assets array for implementation
-            new uint256[](0), // Empty weights array for implementation
-            address(0),       // No manager for implementation
-            ISwapAdapter(address(adapter)),
-            IPriceOracle(address(oracle)),
-            0,                // No fee for implementation
-            address(0),       // No dev wallet for implementation
-            address(0)        // No rewards address for implementation
-        );
-        console.log("Vault implementation deployed at:", address(vaultImplementation));
-        
+                
         // Step 4: Deploy the WhackRockTreasuryFactory
         console.log("Deploying WhackRockTreasuryFactory...");
         WhackRockTreasuryFactory factory = new WhackRockTreasuryFactory(
-            address(vaultImplementation),
             usdcAddress,
             allowedAssets,
             adapter,
@@ -150,7 +132,7 @@ contract DeployScript is Script {
         console.log("\n=== DEPLOYMENT SUMMARY ===");
         console.log("UniTwapOracle: %s", address(oracle));
         console.log("UniAdapter: %s", address(adapter));
-        console.log("Vault Implementation: %s", address(vaultImplementation));
+        
         console.log("WhackRockTreasuryFactory: %s", address(factory));
         console.log("Initial Vault: %s", initialVault);
         console.log("==========================\n");

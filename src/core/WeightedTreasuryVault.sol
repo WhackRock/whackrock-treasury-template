@@ -38,16 +38,6 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
     address   public devWallet;
     uint256   private stateId;
 
-    /*══════════════ EVENTS ═════════════*/
-    event NeedsRebalance(uint256 indexed stateId, uint256 timestamp);
-    event VaultState(
-        uint256 indexed stateId,
-        uint256 timestamp,
-        uint256 tvlUsd,
-        uint256 sharePrice,
-        uint256[] weights,
-        address devWallet
-    );
 
     /*══════════════ CONSTRUCTOR ═══════*/
     constructor(

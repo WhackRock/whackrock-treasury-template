@@ -12,23 +12,20 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory, Ownable {
 
 
-    address public immutable override logic;        // WeightedTreasuryVault impl
-    address public immutable override USDCb;        // Base USDC.b address
-    ISwapAdapter public immutable override adapter;
-    IPriceOracle public immutable override oracle;
-    address public immutable override wrkRewards;   // global 20 % sink
+    address public override USDCb;                 // Base USDC.b address
+    ISwapAdapter public override adapter;
+    IPriceOracle public override oracle;
+    address public override wrkRewards;            // global 20 % sink
 
-    address[] public override allowedAssets;        // Master list of allowed assets
+    address[] public override allowedAssets;       // Master list of allowed assets
 
     constructor(
-        address _logic,
         address _usdcb,
         address[] memory _allowedAssets,
         ISwapAdapter _adapter,
         IPriceOracle _oracle,
         address _wrkRewards
     ) Ownable(msg.sender) {
-        logic       = _logic;
         USDCb       = _usdcb;
         adapter     = _adapter;
         oracle      = _oracle;
@@ -49,6 +46,73 @@ contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory, Ownable {
         require(hasUsdcb, "must include USDC.b");
 
         allowedAssets = _allowedAssets;
+    }
+
+
+
+    /**
+     * @notice Set a new USDC.b token address
+     * @param _newUSDCb The new USDC.b address
+     */
+    function setUSDCb(address _newUSDCb) external onlyOwner {
+        require(_newUSDCb != address(0), "Zero address not allowed");
+        address oldUSDCb = USDCb;
+        USDCb = _newUSDCb;
+        
+        // Update allowedAssets to include new USDC.b
+        bool hasNewUsdcb = false;
+        for (uint i = 0; i < allowedAssets.length; ++i) {
+            if (allowedAssets[i] == _newUSDCb) {
+                hasNewUsdcb = true;
+                break;
+            }
+        }
+        
+        if (!hasNewUsdcb) {
+            // Replace old USDC.b with new USDC.b in allowedAssets
+            for (uint i = 0; i < allowedAssets.length; ++i) {
+                if (allowedAssets[i] == oldUSDCb) {
+                    allowedAssets[i] = _newUSDCb;
+                    break;
+                }
+            }
+            emit AllowedAssetsUpdated(allowedAssets);
+        }
+        
+        emit USDCbUpdated(oldUSDCb, _newUSDCb);
+    }
+
+    /**
+     * @notice Set a new swap adapter
+     * @param _newAdapter The new adapter address
+     */
+    function setAdapter(ISwapAdapter _newAdapter) external onlyOwner {
+        require(address(_newAdapter) != address(0), "Zero address not allowed");
+        ISwapAdapter oldAdapter = adapter;
+        adapter = _newAdapter;
+        emit AdapterUpdated(address(oldAdapter), address(_newAdapter));
+    }
+
+    /**
+     * @notice Set a new price oracle
+     * @param _newOracle The new oracle address
+     */
+    function setOracle(IPriceOracle _newOracle) external onlyOwner {
+        require(address(_newOracle) != address(0), "Zero address not allowed");
+        IPriceOracle oldOracle = oracle;
+        oracle = _newOracle;
+        emit OracleUpdated(address(oldOracle), address(_newOracle));
+    }
+
+    /**
+     * @notice Set a new rewards address
+     * @param _newWrkRewards The new rewards address
+     */
+    function setWrkRewards(address _newWrkRewards) external onlyOwner {
+        require(_newWrkRewards != address(0), "Zero address not allowed");
+        address oldWrkRewards = wrkRewards;
+        wrkRewards = _newWrkRewards;
+        emit WrkRewardsUpdated(oldWrkRewards, _newWrkRewards);
     }
 
     function setAllowedAssets(address[] calldata newAssets) external override onlyOwner {

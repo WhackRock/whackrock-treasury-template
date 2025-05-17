@@ -9,9 +9,9 @@ import "./IPriceOracle.sol";
 /**
  * @title IWeightedTreasuryVault
  * @notice Interface for WeightedTreasuryVault contract
- * @dev Extends ERC4626 token vault standard
+ * @dev Designed to pair with a contract that extends ERC4626 token vault standard
  */
-interface IWeightedTreasuryVault is IERC4626 {
+interface IWeightedTreasuryVault {
     /*══════════════ EVENTS ═════════════*/
     /**
      * @notice Emitted when the vault needs rebalancing

@@ -29,11 +29,35 @@ interface IWhackRockTreasuryFactory {
      */
     event AllowedAssetsUpdated(address[] newAssets);
 
+    
     /**
-     * @notice Get the implementation address used for vault deployment
-     * @return The address of the implementation contract
+     * @notice Emitted when the USDC.b address is updated
+     * @param oldUSDCb The previous USDC.b address
+     * @param newUSDCb The new USDC.b address
      */
-    function logic() external view returns (address);
+    event USDCbUpdated(address indexed oldUSDCb, address indexed newUSDCb);
+    
+    /**
+     * @notice Emitted when the adapter is updated
+     * @param oldAdapter The previous adapter address
+     * @param newAdapter The new adapter address
+     */
+    event AdapterUpdated(address indexed oldAdapter, address indexed newAdapter);
+    
+    /**
+     * @notice Emitted when the oracle is updated
+     * @param oldOracle The previous oracle address
+     * @param newOracle The new oracle address
+     */
+    event OracleUpdated(address indexed oldOracle, address indexed newOracle);
+    
+    /**
+     * @notice Emitted when the WRK rewards address is updated
+     * @param oldWrkRewards The previous rewards address
+     * @param newWrkRewards The new rewards address
+     */
+    event WrkRewardsUpdated(address indexed oldWrkRewards, address indexed newWrkRewards);
+
     
     /**
      * @notice Get the USDC.b token address
@@ -42,10 +66,22 @@ interface IWhackRockTreasuryFactory {
     function USDCb() external view returns (address);
     
     /**
+     * @notice Set a new USDC.b token address
+     * @param _newUSDCb The new USDC.b address
+     */
+    function setUSDCb(address _newUSDCb) external;
+    
+    /**
      * @notice Get the swap adapter used by vaults
      * @return The swap adapter contract
      */
     function adapter() external view returns (ISwapAdapter);
+    
+    /**
+     * @notice Set a new swap adapter
+     * @param _newAdapter The new adapter address
+     */
+    function setAdapter(ISwapAdapter _newAdapter) external;
     
     /**
      * @notice Get the price oracle used by vaults
@@ -54,16 +90,23 @@ interface IWhackRockTreasuryFactory {
     function oracle() external view returns (IPriceOracle);
     
     /**
+     * @notice Set a new price oracle
+     * @param _newOracle The new oracle address
+     */
+    function setOracle(IPriceOracle _newOracle) external;
+    
+    /**
      * @notice Get the rewards address that receives 20% of fees
      * @return The rewards address
      */
     function wrkRewards() external view returns (address);
     
     /**
-     * @notice Get the owner address that can modify allowed assets
-     * @return The owner address
+     * @notice Set a new rewards address
+     * @param _newWrkRewards The new rewards address
      */
-    function owner() external view returns (address);
+    function setWrkRewards(address _newWrkRewards) external;
+    
     
     /**
      * @notice Get an allowed asset at a specific index
