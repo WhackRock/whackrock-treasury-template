@@ -100,7 +100,7 @@ contract WeightedTreasuryVault is ERC4626 {
             usd += bal * oracle.usdPrice(tok) / 1e18;
         }
     }
-    function convertToShares(uint256 assets, uint256)
+    function convertToShares(uint256 assets)
         public view override returns (uint256)
     { return totalSupply()==0 ? assets : assets * totalSupply() / totalAssets(); }
     function convertToAssets(uint256 shares)
