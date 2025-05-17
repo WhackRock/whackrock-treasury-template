@@ -18,7 +18,7 @@ contract UniTwapOracle is IPriceOracle {
     uint32  public constant TWAP_SEC = 1_800;           // 30 min
     address public immutable USDCb;                     // 6‑dec bridged USDC
     address public immutable WETH;
-    IUniswapV3Pool public immutable wethUsdcPool;
+    IUniswapV3Pool public wethUsdcPool;
 
     struct Pair { IUniswapV3Pool pool; bool viaWeth; }  // token→QUOTE
     mapping(address => Pair) public pair;
@@ -33,14 +33,32 @@ contract UniTwapOracle is IPriceOracle {
         wethUsdcPool = IUniswapV3Pool(_wethUsdcPool);
     }
 
-    /// @notice One‑time mapping; cannot be overwritten (immutable after set)
+    
     function setPair(
         address token,
         address pool,
         bool viaWeth
     ) external {
-        require(address(pair[token].pool) == address(0), "pair set");
         pair[token] = Pair(IUniswapV3Pool(pool), viaWeth);
+    }
+    
+    /**
+     * @notice Batch set multiple token/pool pairs at once
+     * @param tokens Array of token addresses
+     * @param pools Array of corresponding pool addresses
+     * @param viaWeth Array of flags indicating if price should be calculated via WETH
+     */
+    function setPairs(
+        address[] calldata tokens,
+        address[] calldata pools,
+        bool[] calldata viaWeth
+    ) external {
+        require(tokens.length == pools.length, "length mismatch");
+        require(tokens.length == viaWeth.length, "length mismatch");
+        
+        for (uint256 i = 0; i < tokens.length; i++) {
+            pair[tokens[i]] = Pair(IUniswapV3Pool(pools[i]), viaWeth[i]);
+        }
     }
 
     /*───────────────────────── IPriceOracle ─────────────────────────*/

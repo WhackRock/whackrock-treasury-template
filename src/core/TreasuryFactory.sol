@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.20;
 
-import { Clones } from "@openzeppelin/contracts/proxy/Clones.sol";
+
 import { WeightedTreasuryVault } from "./WeightedTreasuryVault.sol";
 import "./interfaces/ISwapAdapter.sol";
 import "./interfaces/IPriceOracle.sol";
@@ -46,7 +46,7 @@ contract TreasuryFactory {
         owner       = msg.sender;
 
         // Validate initial allowed assets
-        require(_allowedAssets.length <= 8, "too many assets");
+        // require(_allowedAssets.length <= 8, "too many assets");
         require(_allowedAssets.length >= 2, "min 2 assets");
         
         // Check that USDC.b is included
@@ -63,7 +63,7 @@ contract TreasuryFactory {
     }
 
     function setAllowedAssets(address[] calldata newAssets) external onlyOwner {
-        require(newAssets.length <= 8, "too many assets");
+        // require(newAssets.length <= 8, "too many assets");
         require(newAssets.length >= 2, "min 2 assets");
         
         // Check that USDC.b is included
@@ -85,6 +85,7 @@ contract TreasuryFactory {
     }
 
     /**
+     * @param allowedAssetsSubset Array of asset addresses to use for this vault (must be subset of allowedAssets)
      * @param weights       Corresponding weights in basis points (e.g. 6000 = 60%)
      * @param mgmtFeeBps    e.g. 200 = 2 % upfront fee
      * @param devWallet     receives 80 % of that fee
@@ -93,14 +94,19 @@ contract TreasuryFactory {
     function createVault(
         string   calldata name,
         string   calldata sym,
+        address[] calldata allowedAssetsSubset,
         uint256[] calldata weights,
         address  manager,
         uint16   mgmtFeeBps,
         address  devWallet,
         bytes32  tag
     ) external returns (address vault) {
-        // Validate weights match allowed assets
-        require(weights.length == allowedAssets.length, "weights len");
+        // Validate subset length
+        require(allowedAssetsSubset.length <= 20, "max 20 assets");
+        require(allowedAssetsSubset.length >= 2, "min 2 assets");
+        
+        // Validate weights match subset
+        require(weights.length == allowedAssetsSubset.length, "weights len");
         
         // Check weights sum to 100%
         uint256 sum;
@@ -109,10 +115,32 @@ contract TreasuryFactory {
         }
         require(sum == 1e4, "weights");
 
+        // Verify USDC.b is included
+        bool hasUsdcb = false;
+        for (uint i; i < allowedAssetsSubset.length; ++i) {
+            if (allowedAssetsSubset[i] == USDCb) {
+                hasUsdcb = true;
+                break;
+            }
+        }
+        require(hasUsdcb, "must include USDC.b");
+        
+        // Verify each asset in subset is in the master allowedAssets list
+        for (uint i; i < allowedAssetsSubset.length; ++i) {
+            bool isAllowed = false;
+            for (uint j; j < allowedAssets.length; ++j) {
+                if (allowedAssetsSubset[i] == allowedAssets[j]) {
+                    isAllowed = true;
+                    break;
+                }
+            }
+            require(isAllowed, "asset not allowed");
+        }
+
         // Convert addresses to IERC20 array
-        IERC20[] memory erc20Assets = new IERC20[](allowedAssets.length);
-        for (uint i; i < allowedAssets.length; ++i) {
-            erc20Assets[i] = IERC20(allowedAssets[i]);
+        IERC20[] memory erc20Assets = new IERC20[](allowedAssetsSubset.length);
+        for (uint i; i < allowedAssetsSubset.length; ++i) {
+            erc20Assets[i] = IERC20(allowedAssetsSubset[i]);
         }
 
         // Deploy new WeightedTreasuryVault via new keyword
@@ -133,12 +161,5 @@ contract TreasuryFactory {
         emit VaultCreated(vault, manager, weights, tag);
     }
 
-    function predict(address manager, string calldata name)
-        external view returns (address)
-    {
-        // Note: This prediction logic is no longer accurate since we're not using Clones
-        // Keeping as a placeholder but should be removed or updated
-        bytes32 salt = keccak256(abi.encodePacked(manager, name));
-        return Clones.predictDeterministicAddress(logic, salt, address(this));
-    }
+
 }
