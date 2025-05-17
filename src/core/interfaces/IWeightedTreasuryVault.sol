@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC4626.sol";
+import "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./ISwapAdapter.sol";
 import "./IPriceOracle.sol";
@@ -71,7 +71,7 @@ interface IWeightedTreasuryVault is IERC4626 {
     function oracle() external view returns (IPriceOracle);
     
     /**
-     * @notice Get the manager address that can update weights and rebalance
+     * @notice Get the manager address (alias for owner)
      * @return The manager address
      */
     function manager() external view returns (address);

@@ -7,8 +7,9 @@ import "./interfaces/ISwapAdapter.sol";
 import "./interfaces/IPriceOracle.sol";
 import "./interfaces/IWhackRockTreasuryFactory.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory {
+contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory, Ownable {
 
 
     address public immutable override logic;        // WeightedTreasuryVault impl
@@ -16,14 +17,8 @@ contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory {
     ISwapAdapter public immutable override adapter;
     IPriceOracle public immutable override oracle;
     address public immutable override wrkRewards;   // global 20 % sink
-    address public override owner;                  // can update allowedAssets
 
     address[] public override allowedAssets;        // Master list of allowed assets
-
-    modifier onlyOwner() {
-        require(msg.sender == owner, "not owner");
-        _;
-    }
 
     constructor(
         address _logic,
@@ -32,13 +27,12 @@ contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory {
         ISwapAdapter _adapter,
         IPriceOracle _oracle,
         address _wrkRewards
-    ) {
+    ) Ownable(msg.sender) {
         logic       = _logic;
         USDCb       = _usdcb;
         adapter     = _adapter;
         oracle      = _oracle;
         wrkRewards  = _wrkRewards;
-        owner       = msg.sender;
 
         // Validate initial allowed assets
         // require(_allowedAssets.length <= 8, "too many assets");
@@ -226,6 +220,4 @@ contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory {
 
         emit VaultCreated(vault, manager, weights, tag);
     }
-
-
 }

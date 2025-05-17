@@ -6,6 +6,7 @@ import { ERC4626 }      from "@openzeppelin/contracts/token/ERC20/extensions/ERC
 import { IERC20 }       from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SafeERC20 }    from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { Ownable }      from "@openzeppelin/contracts/access/Ownable.sol";
 
 import { ISwapAdapter } from "./interfaces/ISwapAdapter.sol";
 import { IPriceOracle } from "./interfaces/IPriceOracle.sol";
@@ -18,7 +19,7 @@ import { IWeightedTreasuryVault } from "./interfaces/IWeightedTreasuryVault.sol"
  *          • Emits NeedsRebalance if any asset drifts ±2 %  
  *          • Supports **basket withdraw** _and_ **single-asset withdraw**
  */
-contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault {
+contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
     using SafeERC20 for IERC20;
 
     /*══════════════ CONFIG ══════════════*/
@@ -28,7 +29,6 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault {
     address public immutable USDCb;
     ISwapAdapter public immutable adapter;
     IPriceOracle public immutable oracle;
-    address public immutable manager;
     address public immutable wrkRewards;
     uint16  public immutable mgmtFeeBps;          // e.g. 200 = 2 %
 
@@ -49,9 +49,6 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault {
         address devWallet
     );
 
-    /*══════════════ MODIFIERS ═════════*/
-    modifier onlyM() { require(msg.sender == manager, "not manager"); _; }
-
     /*══════════════ CONSTRUCTOR ═══════*/
     constructor(
         string   memory name_,
@@ -68,6 +65,7 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault {
     )
         ERC20(name_, sym_)
         ERC4626(IERC20(_usdcb))   // USDC.b is the accounting asset
+        Ownable(_manager)
     {
         require(_feeBps <= 1_000, "fee > 10%");
         require(_assets.length == _weights.length && _assets.length <= 8, "len");
@@ -79,7 +77,6 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault {
         USDCb  = _usdcb;
         allowedAssets = _assets;
         targetWeights = _weights;
-        manager   = _manager;
         adapter   = _adapter;
         oracle    = _oracle;
         mgmtFeeBps= _feeBps;
@@ -195,24 +192,31 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault {
     }
 
     /*══════════ MANAGER OPS ═══════════*/
-    function setWeights(uint256[] calldata w) external onlyM {
+    function setWeights(uint256[] calldata w) external onlyOwner {
         _setWeights(w);
         if (_needsRebalance()) emit NeedsRebalance(stateId, block.timestamp);
         _emitState();
     }
-    function setDevWallet(address d) external onlyM { devWallet = d; _emitState(); }
+    function setDevWallet(address d) external onlyOwner { devWallet = d; _emitState(); }
 
-    function rebalance(bytes calldata data) external onlyM {
+    function rebalance(bytes calldata data) external onlyOwner {
         require(adapter.execute(data), "swap fail");
         _emitState();
     }
-    function setWeightsAndRebalance(bytes calldata data, uint256[] calldata w) external onlyM {
+    function setWeightsAndRebalance(bytes calldata data, uint256[] calldata w) external onlyOwner {
         _setWeights(w);
         require(adapter.execute(data), "swap fail");
         require(!_needsRebalance(), "setWeightsAndRebalance failed");
         _emitState();
     }
 
+    /**
+     * @notice Get the manager address (alias for owner)
+     * @return The manager address
+     */
+    function manager() external view override returns (address) {
+        return owner();
+    }
 
     /*══════════ VIEW HELPERS ══════════*/
     function needsRebalance() external view returns (bool) { return _needsRebalance(); }

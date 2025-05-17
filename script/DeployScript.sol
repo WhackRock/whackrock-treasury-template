@@ -31,7 +31,6 @@ contract DeployScript is Script {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address usdcAddress = vm.envAddress("USDC_ADDRESS");
         address wethAddress = vm.envAddress("WETH_ADDRESS");
-        address uniswapFactoryAddress = vm.envAddress("UNISWAP_V3_FACTORY");
         address wethUsdcPoolAddress = vm.envAddress("WETH_USDC_POOL");
         address universalRouterAddress = vm.envAddress("UNIVERSAL_ROUTER");
         address wrkRewardsAddress = vm.envAddress("WRK_REWARDS_ADDRESS");
