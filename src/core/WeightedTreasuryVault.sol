@@ -113,6 +113,7 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
     }
 
     /*════════════ DEPOSIT ETH ══════════*/
+    // TODO: Remove native eth deposits from contracts
     function depositETH(address receiver)
         external payable  returns (uint256 sharesOut)
     {

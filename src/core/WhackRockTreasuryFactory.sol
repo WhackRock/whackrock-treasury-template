@@ -18,6 +18,10 @@ contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory, Ownable {
     address public override wrkRewards;            // global 20 % sink
 
     address[] public override allowedAssets;       // Master list of allowed assets
+    
+    // Registry functionality
+    address[] public treasuries;                   // Array of all created treasuries
+    mapping(string => address) public treasuryNames; // Mapping of treasury names to addresses to ensure uniqueness
 
     constructor(
         address _usdcb,
@@ -48,6 +52,32 @@ contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory, Ownable {
         allowedAssets = _allowedAssets;
     }
 
+    // Registry getter functions
+    
+    /**
+     * @notice Get the total number of treasuries created by this factory
+     * @return count Number of treasuries
+     */
+    function getTreasuryCount() external view returns (uint256) {
+        return treasuries.length;
+    }
+    
+    /**
+     * @notice Get all treasuries created by this factory
+     * @return Array of treasury addresses
+     */
+    function getAllTreasuries() external view returns (address[] memory) {
+        return treasuries;
+    }
+    
+    /**
+     * @notice Check if a treasury name is already taken
+     * @param name The treasury name to check
+     * @return bool True if the name is already taken
+     */
+    function isTreasuryNameTaken(string calldata name) external view returns (bool) {
+        return treasuryNames[name] != address(0);
+    }
 
 
     /**
@@ -225,6 +255,9 @@ contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory, Ownable {
         address  devWallet,
         bytes32  tag
     ) external override returns (address vault) {
+        // Check name uniqueness
+        require(treasuryNames[name] == address(0), "Treasury name already taken");
+        
         // Validate subset length
         require(allowedAssetsSubset.length <= 20, "max 20 assets");
         require(allowedAssetsSubset.length >= 2, "min 2 assets");
@@ -281,6 +314,10 @@ contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory, Ownable {
             devWallet,
             wrkRewards
         ));
+        
+        // Add vault to registry
+        treasuries.push(vault);
+        treasuryNames[name] = vault;
 
         emit VaultCreated(vault, manager, weights, tag);
     }

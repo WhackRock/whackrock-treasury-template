@@ -140,6 +140,39 @@ interface IWhackRockTreasuryFactory {
     function deleteAllowedAsset(address asset) external;
     
     /**
+     * @notice Get a treasury vault at a specific index
+     * @param index The index in the array
+     * @return The treasury vault address
+     */
+    function treasuries(uint256 index) external view returns (address);
+    
+    /**
+     * @notice Get the address of a treasury by its name
+     * @param name The name of the treasury
+     * @return The treasury vault address
+     */
+    function treasuryNames(string calldata name) external view returns (address);
+    
+    /**
+     * @notice Get the total number of treasuries created by this factory
+     * @return count Number of treasuries
+     */
+    function getTreasuryCount() external view returns (uint256);
+    
+    /**
+     * @notice Get all treasuries created by this factory
+     * @return Array of treasury addresses
+     */
+    function getAllTreasuries() external view returns (address[] memory);
+    
+    /**
+     * @notice Check if a treasury name is already taken
+     * @param name The treasury name to check
+     * @return bool True if the name is already taken
+     */
+    function isTreasuryNameTaken(string calldata name) external view returns (bool);
+    
+    /**
      * @notice Create a new vault with custom parameters
      * @param name Name of the vault token
      * @param sym Symbol of the vault token

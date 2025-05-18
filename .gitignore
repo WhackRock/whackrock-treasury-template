@@ -8,7 +8,7 @@ out/
 /broadcast/**/dry-run/
 lib/*
 gameplan.md
-
+/node_modules
 # Docs
 docs/
 
