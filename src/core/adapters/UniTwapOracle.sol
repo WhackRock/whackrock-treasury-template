@@ -1,4 +1,5 @@
-// SPDX‑License‑Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (C) 2024 WhackRock Labs. All rights reserved.
 pragma solidity ^0.8.20;
 
 import { IPriceOracle } from "../interfaces/IPriceOracle.sol";
@@ -7,7 +8,7 @@ import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 
 /**
  * @title UniTwapOracle
- * @notice Returns USD prices using Uniswap V3 pools only.
+ * @notice Returns USD prices using Uniswap V3 pools only.
  *         Supports direct token/USDC.b pools OR token/WETH + WETH/USDC.b.
  *
  *         • 30‑minute arithmetic mean tick (robust to flash loans)

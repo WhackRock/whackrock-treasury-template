@@ -1,13 +1,14 @@
-// SPDX‑License‑Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (C) 2024 WhackRock Labs. All rights reserved.
 pragma solidity ^0.8.20;
 
 import { ISwapAdapter } from "../interfaces/ISwapAdapter.sol";
 
 /**
  * @title UniAdapter
- * @dev Forwards raw Universal Router calldata. The vault pre‑approves
+ * @dev Forwards raw Universal Router calldata. The vault pre‑approves
  *      its tokens to this adapter once; the adapter uses Permit2 under
- *      the hood when Universal Router executes.
+ *      the hood when Universal Router executes.
  *
  *      Slippage checks live inside the calldata (minOut, deadline).
  */
