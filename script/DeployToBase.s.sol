@@ -8,7 +8,7 @@ import "../src/core/WeightedTreasuryVault.sol";
 import "../src/core/WhackRockTreasuryFactory.sol";
 import "../src/core/interfaces/ISwapAdapter.sol";
 import "../src/core/interfaces/IPriceOracle.sol";
-import "../src/core/adapters/UniTwapOracle.sol";
+import "../src/core/adapters/UniTwapDualOracle.sol";
 import "../src/core/adapters/UniAdapter.sol";
 
 /**
@@ -18,13 +18,14 @@ import "../src/core/adapters/UniAdapter.sol";
  *
  * Environment variables required (in .env file):
  * - PRIVATE_KEY: Deployer private key (can include 0x prefix)
- * - USDC_ADDRESS: Address of USDC on Base (0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA)
+ * - USDC_ADDRESS: Address of USDC on Base (0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)
  * - WETH_ADDRESS: Address of WETH on Base (0x4200000000000000000000000000000000000006)
- * - UNISWAP_V3_FACTORY: Address of Uniswap V3 Factory on Base 
- * - WETH_USDC_POOL: Address of WETH/USDC pool on Base
+ * - WETH_USDC_POOL: Address of WETH/USDC pool on Base (0xd0b53D9277642d899DF5C87A3966A349A798F224)
  * - UNIVERSAL_ROUTER: Address of Universal Router on Base
  * - WRK_REWARDS_ADDRESS: Address where 20% of fees go
  * - INITIAL_ASSETS: Comma-separated list of initial allowed asset addresses
+ * - VIRTUALS_ADDRESS: Address of Virtuals token (0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b)
+ * - VIRTUALS_POOL: Address of Virtuals/WETH V2 pool (0xE31c372a7Af875b3B5E0F3713B17ef51556da667)
  * - BASESCAN_API_KEY: API key for verification on Basescan
  *
  * To deploy:
@@ -83,21 +84,31 @@ contract DeployToBaseScript is Script {
         // Start broadcasting transactions
         vm.startBroadcast(deployerPrivateKey);
         
-        // Step 1: Deploy UniTwapOracle
-        console.log("Deploying UniTwapOracle...");
-        UniTwapOracle oracle = new UniTwapOracle(
+        // Step 1: Deploy UniTwapDualOracle
+        console.log("Deploying UniTwapDualOracle...");
+        UniTwapDualOracle oracle = new UniTwapDualOracle(
             usdcAddress, 
             wethAddress,
             wethUsdcPoolAddress
         );
-        console.log("UniTwapOracle deployed at:", address(oracle));
+        console.log("UniTwapDualOracle deployed at:", address(oracle));
         
-        // Step 2: Deploy UniAdapter
+        // // Step 2: Configure Virtuals token to use Uniswap V2 pool
+        // console.log("Configuring Virtuals token in oracle...");
+        // oracle.setPoolConfig(
+        //     virtualsAddress,
+        //     virtualsPoolAddress,
+        //     true,  // viaWeth - calculate via WETH
+        //     true   // isV2 - this is a Uniswap V2 pool
+        // );
+        // console.log("Virtuals token configured to use V2 pool");
+        
+        // Step 3: Deploy UniAdapter
         console.log("Deploying UniAdapter...");
         UniAdapter adapter = new UniAdapter(universalRouterAddress);
         console.log("UniAdapter deployed at:", address(adapter));
                 
-        // Step 3: Deploy the WhackRockTreasuryFactory
+        // Step 4: Deploy the WhackRockTreasuryFactory
         console.log("Deploying WhackRockTreasuryFactory...");
         WhackRockTreasuryFactory factory = new WhackRockTreasuryFactory(
             usdcAddress,
@@ -115,7 +126,7 @@ contract DeployToBaseScript is Script {
         // Print deployment summary with all important information
         console.log("\n=== BASE MAINNET DEPLOYMENT SUMMARY ===");
         console.log("============= CONTRACT ADDRESSES =============");
-        console.log("UniTwapOracle:             %s", address(oracle));
+        console.log("UniTwapDualOracle:         %s", address(oracle));
         console.log("UniAdapter:                %s", address(adapter));
         console.log("WhackRockTreasuryFactory:  %s", address(factory));
         console.log("============= CONFIG ADDRESSES =============");
@@ -135,6 +146,7 @@ contract DeployToBaseScript is Script {
         console.log("1. Verify contracts on Basescan");
         console.log("2. Create vaults using the factory");
         console.log("3. Set up frontend to interact with contracts");
+        console.log("4. Configure any other token pairs in the oracle using setPoolConfig");
     }
     
     /**

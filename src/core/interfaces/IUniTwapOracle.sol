@@ -7,12 +7,27 @@ import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
 /**
  * @title IUniTwapOracle
- * @notice Interface for UniTwapOracle that provides USD prices using Uniswap V3 pools.
+ * @notice Interface for UniTwapDualOracle that provides USD prices using Uniswap pools.
  *         Supports direct token/USDC.b pools OR token/WETH + WETH/USDC.b.
+ *         Works with both Uniswap V2 and V3 pools.
  */
 interface IUniTwapOracle is IPriceOracle {
     /**
-     * @notice Time window for TWAP calculation in seconds
+     * @notice Pool types
+     */
+    enum PoolType { V2, V3 }
+    
+    /**
+     * @notice Pool configuration
+     */
+    struct PoolConfig { 
+        address poolAddress; 
+        bool viaWeth;      // Whether to calculate price via WETH
+        PoolType poolType; // V2 or V3
+    }
+    
+    /**
+     * @notice Time window for TWAP calculation in seconds (for V3 pools)
      * @return Time window in seconds (e.g., 1800 for 30 minutes)
      */
     function TWAP_SEC() external view returns (uint32);
@@ -33,48 +48,56 @@ interface IUniTwapOracle is IPriceOracle {
      * @notice The Uniswap V3 pool used for WETH/USDC.b price reference
      * @return Address of the WETH/USDC.b pool
      */
-    function wethUsdcPool() external view returns (IUniswapV3Pool);
+    function wethUsdcPool() external view returns (address);
     
     /**
      * @notice Retrieves the pool configuration for a specific token
      * @param token Address of the token
-     * @return pool The Uniswap V3 pool used for pricing
-     * @return viaWeth Whether price is calculated via WETH
+     * @return Pool configuration containing address, WETH routing flag and pool type
      */
-    function pair(address token) external view returns (IUniswapV3Pool pool, bool viaWeth);
+    function getPoolConfig(address token) external view returns (PoolConfig memory);
     
     /**
-     * @notice Set a token-pool pair for price lookups
+     * @notice Set a token's price pool configuration
      * @param token Token address to configure
-     * @param pool Uniswap V3 pool address to use for pricing
-     * @param viaWeth Whether to calculate price via WETH (true) or directly (false)
+     * @param poolAddress Address of Uniswap pool (V2 or V3)
+     * @param viaWeth Whether price should be calculated via WETH
+     * @param isV2 Whether the pool is Uniswap V2 (true) or V3 (false)
      */
-    function setPair(
+    function setPoolConfig(
         address token,
-        address pool,
-        bool viaWeth
+        address poolAddress,
+        bool viaWeth,
+        bool isV2
     ) external;
     
     /**
-     * @notice Batch set multiple token/pool pairs at once
+     * @notice Configure multiple tokens at once
      * @param tokens Array of token addresses
-     * @param pools Array of corresponding pool addresses
-     * @param viaWeth Array of flags indicating if price should be calculated via WETH
+     * @param poolAddresses Array of pool addresses
+     * @param viaWeth Array of flags for WETH calculation
+     * @param isV2 Array of flags for V2/V3 selection
      */
-    function setPairs(
+    function batchSetPoolConfig(
         address[] calldata tokens,
-        address[] calldata pools,
-        bool[] calldata viaWeth
+        address[] calldata poolAddresses,
+        bool[] calldata viaWeth,
+        bool[] calldata isV2
     ) external;
     
     /**
      * @notice Get USD price for a token (inherited from IPriceOracle)
      * @param token ERC-20 address
      * @return priceUsd1e18 USD price * 1e18
-     * Special cases:
-     * - If token is USDC.b, returns 1e18 ($1)
-     * - If token is WETH, uses the WETH/USDC.b pool directly
-     * - Otherwise uses the pool configured in the pair mapping
      */
-    function usdPrice(address token) external view override returns (uint256 priceUsd1e18);
+    // function usdPrice(address token) external view returns (uint256 priceUsd1e18);
+    
+    /**
+     * @notice Pool configuration update event
+     * @param token Token that was configured
+     * @param pool Pool address that was set
+     * @param viaWeth Whether price calculation is via WETH
+     * @param poolType Type of pool (V2 or V3)
+     */
+    event PoolConfigSet(address indexed token, address indexed pool, bool viaWeth, PoolType poolType);
 } 

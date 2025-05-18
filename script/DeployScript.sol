@@ -8,7 +8,7 @@ import "../src/core/WeightedTreasuryVault.sol";
 import "../src/core/WhackRockTreasuryFactory.sol";
 import "../src/core/interfaces/ISwapAdapter.sol";
 import "../src/core/interfaces/IPriceOracle.sol";
-import "../src/core/adapters/UniTwapOracle.sol";
+import "../src/core/adapters/UniTwapDualOracle.sol";
 import "../src/core/adapters/UniAdapter.sol";
 
 /**
@@ -58,14 +58,14 @@ contract DeployScript is Script {
         // Start broadcasting transactions
         vm.startBroadcast(deployerPrivateKey);
         
-        // Step 1: Deploy UniTwapOracle
-        console.log("Deploying UniTwapOracle...");
-        UniTwapOracle oracle = new UniTwapOracle(
+        // Step 1: Deploy UniTwapDualOracle
+        console.log("Deploying UniTwapDualOracle...");
+        UniTwapDualOracle oracle = new UniTwapDualOracle(
             usdcAddress, 
             wethAddress,
             wethUsdcPoolAddress
         );
-        console.log("UniTwapOracle deployed at:", address(oracle));
+        console.log("UniTwapDualOracle deployed at:", address(oracle));
         
         // Step 2: Deploy UniAdapter
         console.log("Deploying UniAdapter...");
@@ -130,7 +130,7 @@ contract DeployScript is Script {
         
         // Print deployment summary
         console.log("\n=== DEPLOYMENT SUMMARY ===");
-        console.log("UniTwapOracle: %s", address(oracle));
+        console.log("UniTwapDualOracle: %s", address(oracle));
         console.log("UniAdapter: %s", address(adapter));
         
         console.log("WhackRockTreasuryFactory: %s", address(factory));

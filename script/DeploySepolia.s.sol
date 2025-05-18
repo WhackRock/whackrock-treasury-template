@@ -7,7 +7,7 @@ pragma solidity ^0.8.20;
 // import "../src/core/TreasuryFactory.sol";
 // import "../src/core/interfaces/ISwapAdapter.sol";
 // import "../src/core/interfaces/IPriceOracle.sol";
-// import "../src/core/adapters/UniTwapOracle.sol";
+// import "../src/core/adapters/UniTwapDualOracle.sol";
 // import "../src/core/adapters/UniAdapter.sol";
 
 /**
@@ -41,7 +41,7 @@ contract DeploySepoliaScript  {
         
     //     // Deploy UniswapV3 TWAP Oracle
     //     console.log("Deploying Oracle...");
-    //     UniTwapOracle oracle = new UniTwapOracle(
+    //     UniTwapDualOracle oracle = new UniTwapDualOracle(
     //         SEPOLIA_FACTORY_V3, 
     //         SEPOLIA_WETH, 
     //         SEPOLIA_USDC
