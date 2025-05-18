@@ -7,6 +7,7 @@ import { IERC20 }       from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SafeERC20 }    from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Ownable }      from "@openzeppelin/contracts/access/Ownable.sol";
+import { Math }         from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import { ISwapAdapter } from "./interfaces/ISwapAdapter.sol";
 import { IPriceOracle } from "./interfaces/IPriceOracle.sol";
@@ -74,6 +75,10 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
         wrkRewards= _rewards;
 
         _approveTokens();
+        
+        // Initialize with a small amount of shares to prevent inflation attacks
+        _mint(owner(), 1e3); // Mint small amount to initialize
+        
         _emitState();     // snapshot id 0
     }
 
@@ -88,25 +93,66 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
             usd += bal * oracle.usdPrice(tok) / 1e18;
         }
     }
+    
+    // Add protection against inflation attacks in convertToShares
     function convertToShares(uint256 assets)
         public view override returns (uint256)
-    { return totalSupply()==0 ? assets : assets * totalSupply() / totalAssets(); }
+    { 
+        uint256 supply = totalSupply();
+        uint256 _totalAssets = totalAssets();
+        
+        if (supply == 0 || _totalAssets == 0) {
+            // For the first deposit, use a fixed 1:1 ratio
+            return assets;
+        } else {
+            // Add a small virtual amount to both supply and assets 
+            // to make manipulation more expensive
+            uint256 virtualSupply = 1e18; // Small virtual shares
+            uint256 virtualAssets = 1e18; // Corresponding assets
+            
+            return assets * (supply + virtualSupply) / (_totalAssets + virtualAssets);
+        }
+    }
+    
     function convertToAssets(uint256 shares)
         public view override returns (uint256)
-    { return shares * totalAssets() / totalSupply(); }
+    { 
+        uint256 supply = totalSupply();
+        if (supply == 0) return shares;
+        
+        // Add a small virtual amount to both supply and assets
+        uint256 virtualSupply = 1e18; // Small virtual shares
+        uint256 virtualAssets = 1e18; // Corresponding assets
+        
+        return shares * (totalAssets() + virtualAssets) / (supply + virtualSupply);
+    }
 
     /*════════════ DEPOSIT (USDC.b) ═════*/
     function deposit(uint256 assets, address receiver)
         public override  returns (uint256 sharesOut)
     {
+        // Require minimum initial deposit for the first substantial deposit
+        if (totalSupply() <= 1e3) {
+            require(assets >= 1e6, "Initial deposit too small");
+        }
+    
         IERC20(USDCb).safeTransferFrom(msg.sender, address(this), assets);
 
-        uint256 gross = previewDeposit(assets);
-        uint256 fee   = gross * mgmtFeeBps / 10_000;
-        _mint(devWallet,   fee * 8_000 / 10_000);
-        _mint(wrkRewards,  fee - fee * 8_000 / 10_000);
-        _mint(receiver,    gross - fee);
-        sharesOut = gross - fee;
+        // Calculate fee on assets first
+        uint256 fee = assets * mgmtFeeBps / 10_000;
+        uint256 netAssets = assets - fee;
+        
+        // Convert net assets to shares
+        uint256 netShares = convertToShares(netAssets);
+        require(netShares > 0, "0 shares");
+        
+        // Mint shares for fees and depositor
+        uint256 feeShares = convertToShares(fee);
+        _mint(devWallet, feeShares * 8_000 / 10_000);
+        _mint(wrkRewards, feeShares - (feeShares * 8_000 / 10_000));
+        _mint(receiver, netShares);
+        
+        sharesOut = netShares;
 
         if (_needsRebalance()) emit NeedsRebalance(stateId, block.timestamp);
         _emitState();
@@ -117,13 +163,28 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
     function depositETH(address receiver)
         external payable  returns (uint256 sharesOut)
     {
+        // Require minimum initial deposit for the first substantial deposit
+        if (totalSupply() <= 1e3) {
+            require(msg.value >= 1e15, "Initial deposit too small"); // 0.001 ETH minimum
+        }
+    
         uint256 usd = msg.value * oracle.usdPrice(BASE_ETH) / 1e18;
-        uint256 gross = previewDeposit(usd);
-        uint256 fee   = gross * mgmtFeeBps / 10_000;
-        _mint(devWallet,   fee * 8_000 / 10_000);
-        _mint(wrkRewards,  fee - fee * 8_000 / 10_000);
-        _mint(receiver,    gross - fee);
-        sharesOut = gross - fee;
+        
+        // Calculate fee on assets first
+        uint256 fee = usd * mgmtFeeBps / 10_000;
+        uint256 netAssets = usd - fee;
+        
+        // Convert net assets to shares
+        uint256 netShares = convertToShares(netAssets);
+        require(netShares > 0, "0 shares");
+        
+        // Mint shares for fees and depositor
+        uint256 feeShares = convertToShares(fee);
+        _mint(devWallet, feeShares * 8_000 / 10_000);
+        _mint(wrkRewards, feeShares - (feeShares * 8_000 / 10_000));
+        _mint(receiver, netShares);
+        
+        sharesOut = netShares;
 
         if (_needsRebalance()) emit NeedsRebalance(stateId, block.timestamp);
         _emitState();
@@ -188,7 +249,11 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
         if (_needsRebalance()) emit NeedsRebalance(stateId, block.timestamp);
         _emitState();
     }
-    function setDevWallet(address d) external onlyOwner { devWallet = d; _emitState(); }
+    function setDevWallet(address d) external onlyOwner { 
+        require(d != address(0), "Zero address not allowed");
+        devWallet = d; 
+        _emitState(); 
+    }
 
     function rebalance(bytes calldata data) external onlyOwner {
         require(adapter.execute(data), "swap fail");

@@ -332,18 +332,21 @@ contract WeightedTreasuryVaultTest is Test {
         // This test demonstrates why the vault deposits were failing:
         // ERC4626's formula for convertToShares becomes problematic when totalSupply == 0
         // The formula is: assets * totalSupply() / totalAssets(), which is 0 when totalSupply == 0
-        console.log("Initial total supply:", vault.totalSupply());
+        
+        // Note: The contract now mints 1e3 bootstrap shares during construction
+        uint256 initialBootstrapShares = vault.totalSupply(); 
+        console.log("Initial bootstrap shares from constructor:", initialBootstrapShares);
         
         // Setup the vault with mock assets for a realistic test
         setupVaultWithAssets();
         
-        // Solution: Bootstrap the vault with initial shares
-        // In a real system, the initial deposit would need special handling
-        uint256 initialShares = 1000 * 10**18; // 1000 shares
+        // Add more bootstrap shares for testing
+        uint256 additionalShares = 1000 * 10**18; // 1000 shares
         vm.prank(manager);
-        vault._mintBootstrapShares(initialShares);
+        vault._mintBootstrapShares(additionalShares);
         
-        console.log("After bootstrap, total supply:", vault.totalSupply());
+        uint256 totalBootstrapShares = vault.totalSupply();
+        console.log("After adding bootstrap shares, total supply:", totalBootstrapShares);
         
         // Now try a deposit which should work
         uint256 depositAmount = 1000 * 10**6; // 1,000 USDC
@@ -359,8 +362,8 @@ contract WeightedTreasuryVaultTest is Test {
         assertGt(sharesOut, 0, "Should receive shares from deposit");
         
         // Get total dev and rewards fees
-        uint256 totalSupply = vault.totalSupply();
-        console.log("Final total supply:", totalSupply);
+        uint256 finalTotalSupply = vault.totalSupply();
+        console.log("Final total supply:", finalTotalSupply);
         
         // Calculate the expected fee shares
         // The gross amount is the total shares minted, which is split between:
@@ -369,11 +372,11 @@ contract WeightedTreasuryVaultTest is Test {
         // 3. The WRK rewards (20% of fee)
         uint256 feeInSharesTotal = (sharesOut * vault.mgmtFeeBps()) / (10000 - vault.mgmtFeeBps());
         
-        // The actual total should be the initial shares + all minted shares
-        uint256 expectedTotalSupply = initialShares + sharesOut + feeInSharesTotal;
+        // The actual total should be bootstrap shares + all newly minted shares
+        uint256 expectedTotalSupply = totalBootstrapShares + sharesOut + feeInSharesTotal;
         
         // Check with a reasonable tolerance since there might be rounding differences
         uint256 tolerance = 10; // Allow for small rounding errors
-        assertApproxEqAbs(totalSupply, expectedTotalSupply, tolerance, "Total supply should increase by all minted shares");
+        assertApproxEqAbs(finalTotalSupply, expectedTotalSupply, tolerance, "Total supply should increase by all minted shares");
     }
 }
