@@ -2,7 +2,7 @@
 // Copyright (C) 2024 WhackRock Labs. All rights reserved.
 pragma solidity ^0.8.20;
 
-import { IPriceOracle } from "../interfaces/IPriceOracle.sol";
+import { IUniTwapOracle } from "../interfaces/IUniTwapOracle.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 
@@ -15,7 +15,7 @@ import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
  *         • USDC.b assumed to have 6 decimals
  *         • WETH address & WETH/USDC.b pool injected at deploy
  */
-contract UniTwapOracle is IPriceOracle {
+contract UniTwapOracle is IUniTwapOracle {
     uint32  public constant TWAP_SEC = 1_800;           // 30 min
     address public immutable USDCb;                     // 6‑dec bridged USDC
     address public immutable WETH;
@@ -39,7 +39,7 @@ contract UniTwapOracle is IPriceOracle {
         address token,
         address pool,
         bool viaWeth
-    ) external {
+    ) external override {
         pair[token] = Pair(IUniswapV3Pool(pool), viaWeth);
     }
     
@@ -53,7 +53,7 @@ contract UniTwapOracle is IPriceOracle {
         address[] calldata tokens,
         address[] calldata pools,
         bool[] calldata viaWeth
-    ) external {
+    ) external override {
         require(tokens.length == pools.length, "length mismatch");
         require(tokens.length == viaWeth.length, "length mismatch");
         
@@ -64,7 +64,7 @@ contract UniTwapOracle is IPriceOracle {
 
     /*───────────────────────── IPriceOracle ─────────────────────────*/
 
-    /// @inheritdoc IPriceOracle
+    /// @inheritdoc IUniTwapOracle
     function usdPrice(address token)
         external view override
         returns (uint256 priceUsd1e18)

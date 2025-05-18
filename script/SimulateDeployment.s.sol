@@ -95,7 +95,7 @@ contract SimulateDeploymentScript is Script {
      * @param info Deployment info structure
      * @return json JSON string with deployment information
      */
-    function _generateDeploymentJson(DeploymentInfo memory info) internal view returns (string memory) {
+    function _generateDeploymentJson(DeploymentInfo memory info) internal pure returns (string memory) {
         string memory json = "{";
         
         // Basic info
