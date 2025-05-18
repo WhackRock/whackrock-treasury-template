@@ -18,4 +18,4 @@ remappings = [
 sepolia = "${SEPOLIA_RPC_URL}"
 
 [etherscan]
-sepolia = { key = "${ETHERSCAN_API_KEY}" }
+sepolia = { key = "${BASESCAN_API_KEY}" }

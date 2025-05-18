@@ -47,3 +47,7 @@ Everything runs on **Base**, fully on-chain, using only Uniswap prices—no exte
 
 # Uniswap addresses (sepolia base and mainnet base):
 https://docs.uniswap.org/contracts/v3/reference/deployments/base-deployments
+
+
+# To deply:
+ .\run-deploy.ps1

@@ -1,0 +1,30 @@
+{
+  "network": "Base Mainnet",
+  "deploymentTimestamp": 1723412345,
+  "deployer": "0x123456789abcdef123456789abcdef123456789a",
+  "contracts": {
+    "oracle": "0xabc123456789abcdef123456789abcdef123456",
+    "adapter": "0xdef123456789abcdef123456789abcdef123456",
+    "factory": "0x789123456789abcdef123456789abcdef123456",
+    "initialVault": "0x456123456789abcdef123456789abcdef123456"
+  },
+  "config": {
+    "usdc": "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA",
+    "weth": "0x4200000000000000000000000000000000000006",
+    "wrkRewards": "0x90cfB07A46EE4bb20C970Dda18AaD1BA3c9450Ae"
+  },
+  "allowedAssets": [
+    "0x4200000000000000000000000000000000000006",
+    "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA",
+    "0x1a35EE4640b0A3B87705B0A4B45D227Ba60Ca2ad",
+    "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb"
+  ],
+  "initialVaultConfig": {
+    "assets": [
+      "0x4200000000000000000000000000000000000006",
+      "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA",
+      "0x1a35EE4640b0A3B87705B0A4B45D227Ba60Ca2ad"
+    ],
+    "weights": [5000, 3000, 2000]
+  }
+} 
