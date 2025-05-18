@@ -202,6 +202,16 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
     }
 
     /**
+     * @notice Mint bootstrap shares for testing ERC4626 deposits when totalSupply is zero
+     * @dev This is only used for testing and should not be used in production
+     * @param shares Amount of shares to mint to the owner
+     */
+    function _mintBootstrapShares(uint256 shares) external onlyOwner {
+        _mint(owner(), shares);
+        _emitState();
+    }
+
+    /**
      * @notice Get the manager address (alias for owner)
      * @return The manager address
      */
