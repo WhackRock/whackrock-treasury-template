@@ -165,4 +165,12 @@ interface IWeightedTreasuryVault {
      * @return True if rebalancing is needed
      */
     function needsRebalance() external view returns (bool);
+
+    /**
+     * @notice Returns a full snapshot of the vault's value and composition, for subgraph indexing
+     */
+    function VaultSnapshot()
+        external
+        view
+        returns (uint256 timestamp, uint256 tvlUsd, uint256 totalShares, uint256 sharePrice, address[] memory assets, uint256[] memory assetBalances, uint256[] memory assetValuesUsd, uint256[] memory weights);
 } 

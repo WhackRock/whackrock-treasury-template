@@ -288,6 +288,52 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
     /*══════════ VIEW HELPERS ══════════*/
     function needsRebalance() external view returns (bool) { return _needsRebalance(); }
 
+    /**
+     * @notice Returns a full snapshot of the vault's value and composition, for subgraph indexing
+     */
+    function VaultSnapshot()
+        external
+        override
+        view
+        returns (
+            uint256 timestamp,
+            uint256 tvlUsd,
+            uint256 totalShares,
+            uint256 sharePrice,         // 18 decimals
+            address[] memory assets,
+            uint256[] memory assetBalances,
+            uint256[] memory assetValuesUsd,
+            uint256[] memory weights    // target weights, 1e4 bps
+        )
+    {
+        uint256 _tvl = totalAssets();
+        uint256 _shares = totalSupply();
+        uint256 _sharePrice = (_shares == 0) ? 1e18 : (_tvl * 1e18) / _shares;
+
+        uint n = allowedAssets.length;
+        address[] memory addrs = new address[](n);
+        uint256[] memory bals  = new uint256[](n);
+        uint256[] memory vals  = new uint256[](n);
+        for (uint i = 0; i < n; ++i) {
+            IERC20 token = allowedAssets[i];
+            addrs[i] = address(token);
+            bals[i] = token.balanceOf(address(this));
+            vals[i] = _getAssetValue(token);
+        }
+
+        return (
+            block.timestamp,
+            _tvl,
+            _shares,
+            _sharePrice,
+            addrs,
+            bals,
+            vals,
+            targetWeights
+        );
+    }
+
+
     /*══════════ INTERNAL LIB ══════════*/
     function _setWeights(uint256[] calldata w) internal {
         require(w.length == allowedAssets.length, "len");
