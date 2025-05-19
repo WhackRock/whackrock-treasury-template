@@ -23,6 +23,9 @@ contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory, Ownable {
     // Registry functionality
     address[] public treasuries;                   // Array of all created treasuries
     mapping(string => address) public treasuryNames; // Mapping of treasury names to addresses to ensure uniqueness
+    
+    // Owner tracking
+    mapping(address => address[]) private vaultsByOwner;  // Mapping of owner address to their vaults
 
     constructor(
         address _usdcb,
@@ -78,6 +81,15 @@ contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory, Ownable {
      */
     function isTreasuryNameTaken(string calldata name) external view returns (bool) {
         return treasuryNames[name] != address(0);
+    }
+
+    /**
+     * @notice Get all vaults owned by a specific address
+     * @param owner The owner's address
+     * @return Array of vault addresses owned by the specified address
+     */
+    function getVaultsByOwner(address owner) external view returns (address[] memory) {
+        return vaultsByOwner[owner];
     }
 
 
@@ -319,6 +331,9 @@ contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory, Ownable {
         // Add vault to registry
         treasuries.push(vault);
         treasuryNames[name] = vault;
+        
+        // Add to owner mapping
+        vaultsByOwner[manager].push(vault);
 
         emit VaultCreated(vault, manager, weights, tag);
     }

@@ -174,6 +174,13 @@ interface IWhackRockTreasuryFactory {
     function isTreasuryNameTaken(string calldata name) external view returns (bool);
     
     /**
+     * @notice Get all vaults owned by a specific address
+     * @param owner The owner's address
+     * @return Array of vault addresses owned by the specified address
+     */
+    function getVaultsByOwner(address owner) external view returns (address[] memory);
+    
+    /**
      * @notice Create a new vault with custom parameters
      * @param name Name of the vault token
      * @param sym Symbol of the vault token

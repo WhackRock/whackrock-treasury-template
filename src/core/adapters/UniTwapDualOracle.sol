@@ -36,6 +36,13 @@ contract UniTwapDualOracle is IUniTwapOracle {
         USDCb = _usdc;
         WETH = _weth;
         wethUsdcPool = _wethUsdcPool;
+
+        setPoolConfig(
+            address(0), // address(0)
+            _wethUsdcPool, // WETH/USDC.b V3 pool
+            false,
+            false
+        );
     }
     
     /**
@@ -50,7 +57,7 @@ contract UniTwapDualOracle is IUniTwapOracle {
         address poolAddress,
         bool viaWeth,
         bool isV2
-    ) external override {
+    ) public override {
         PoolType poolType = isV2 ? PoolType.V2 : PoolType.V3;
         pools[token] = PoolConfig(poolAddress, viaWeth, poolType);
         emit PoolConfigSet(token, poolAddress, viaWeth, poolType);
@@ -99,7 +106,7 @@ contract UniTwapDualOracle is IUniTwapOracle {
         
         // Get token's pool configuration
         PoolConfig memory config = pools[token];
-        require(config.poolAddress != address(0), "Pool not configured");
+        require(config.poolAddress != address(0), "Pool not configured HERE");
         
         // Calculate price based on pool type
         if (config.poolType == PoolType.V2) {
