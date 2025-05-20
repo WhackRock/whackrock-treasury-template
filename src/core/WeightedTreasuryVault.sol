@@ -32,6 +32,8 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
     address public constant BASE_ETH = address(0);
     uint16  public constant DEVIATION_BPS = 200;     // 2 % drift band
     uint16  public constant AUTO_SLIPPAGE_BPS = 18;  // 0.18 % max slippage on auto‑swaps
+    uint256 private constant VIRTUAL_SHARES  = 1e6; // 1 “virtual” share
+    uint256 private constant VIRTUAL_ASSETS = 1e6; // 1 USD virtual buffer
 
     /*//////////////////////////////////////////////////////////////
                                  IMMUTABLES
@@ -115,6 +117,36 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
             if (bal != 0) usd += bal * oracle.usdPrice(tok) / 1e18;
         }
     }
+
+    /*───────────────────────────────
+    *  ERC-4626 share/asset math
+    *──────────────────────────────*/
+    // 1st deposit => 1:1, afterwards price = TVL / supply (with small buffer)
+    function convertToShares(uint256 assets)
+        public
+        view
+        override
+        returns (uint256)
+    {
+        uint256 supply = totalSupply();
+        uint256 tvl    = totalAssets();
+        return (supply == 0 || tvl == 0)
+            ? assets
+            : (assets * (supply + VIRTUAL_SHARES)) / (tvl + VIRTUAL_ASSETS);
+    }
+    
+    function convertToAssets(uint256 shares)
+        public
+        view
+        override
+        returns (uint256)
+    {
+        uint256 supply = totalSupply();
+        if (supply == 0) return shares;
+        uint256 tvl = totalAssets();
+        return (shares * (tvl + VIRTUAL_ASSETS)) / (supply + VIRTUAL_SHARES);
+    }
+
 
     /*//////////////////////////////////////////////////////////////
                            4626 VIEW FUNCTIONS
@@ -225,6 +257,8 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
     function deposit(uint256 assets, address receiver)
         public override returns (uint256 sharesOut)
     {
+        uint256 tvlBefore = totalAssets();
+        // Does this make sense?
         if (totalSupply() <= 1e3) require(assets >= 1e6, "seed small");
 
         IERC20(USDCb).safeTransferFrom(msg.sender, address(this), assets);
@@ -242,6 +276,57 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
         _maybeAutoRebalance();
         _emitState();
     }
+    
+    /**
+     * @notice Deposit `assets` (USDC.b) and mint shares to `receiver`.
+     * @dev Protects against first‑mover inflation, external “gift‑grief” TVL
+     *      manipulation, and fairly splits the upfront management fee.
+     */
+    function deposit2(uint256 assets, address receiver)
+        public override returns (uint256 sharesOut)
+    {
+        require(assets != 0, "zero assets");
+
+        uint256 supplyBefore = totalSupply();
+        uint256 tvlBefore    = totalAssets();
+
+        /* ── 1.  seed‑size guard – ensure first real deposit is meaningful ── */
+        if (supplyBefore <= 1e3) {
+            // require ≥ 1 USDC (1e6) after the 1k seed‑shares minted in constructor
+            require(assets >= 1e6, "seed too small");
+        }
+
+        /* ── 2.  pull funds in – from now on `assets` is in the vault ─────── */
+        IERC20(USDCb).safeTransferFrom(msg.sender, address(this), assets);
+
+        /* ── 3.  gift‑grief guard – nobody may donate extra TVL before mint ─ */
+        uint256 tvlAfterPull = totalAssets();
+        // allow +1 wei slack for rounding errors on interest‑bearing tokens, etc.
+        require(tvlAfterPull <= tvlBefore + assets + 1, "external donation");
+
+        /* ── 4.  fee split (80 % dev / 20 % WRK) ──────────────────────────── */
+        uint256 feeAssets  = (assets * mgmtFeeBps) / 10_000;
+        uint256 netAssets  = assets - feeAssets;
+
+        /* ── 5.  calculate shares using *pre‑mint* supply / TVL ───────────── */
+        uint256 feeShares  = convertToShares(feeAssets);
+        sharesOut          = convertToShares(netAssets);
+        require(sharesOut != 0, "0 shares");
+
+        if (feeShares != 0) {
+            uint256 devPortion = (feeShares * 8_000) / 10_000; // 80 %
+            _mint(devWallet,  devPortion);
+            _mint(wrkRewards, feeShares - devPortion);         // 20 %
+        }
+
+        /* ── 6.  mint depositor shares ───────────────────────────────────── */
+        _mint(receiver, sharesOut);
+
+        /* ── 7.  optional auto‑rebalance & state snapshot ─────────────────── */
+        _maybeAutoRebalance();
+        _emitState();
+    }
+
 
     /**
      * @notice Mint exactly `shares` vault shares to `receiver` by depositing assets
@@ -269,19 +354,6 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
         
         _maybeAutoRebalance();
         _emitState();
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                        ETH DEPOSIT WRAPPER
-    //////////////////////////////////////////////////////////////*/
-    function depositETH(address receiver) external payable override returns (uint256 sharesOut) {
-        uint256 usd = msg.value * oracle.usdPrice(BASE_ETH) / 1e18;
-        require(usd != 0, "zero dep");
-        // swap ETH->USDCb via adapter with 0 slippage guard (handled inside adapter)
-        bytes memory data = abi.encode(BASE_ETH, USDCb, msg.value, AUTO_SLIPPAGE_BPS);
-        require(adapter.execute{value: msg.value}(data), "eth swap fail");
-
-        sharesOut = deposit(usd, receiver); // reuse logic (now USDCb inside)
     }
 
     /*//////////////////////////////////////////////////////////////

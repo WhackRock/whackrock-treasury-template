@@ -111,12 +111,15 @@ interface IWeightedTreasuryVault {
     function devWallet() external view returns (address);
 
     /*══════════════ FUNCTIONS ═══════════*/
-    /**
-     * @notice Deposit ETH into the vault
-     * @param receiver Address to receive shares
-     * @return sharesOut Amount of shares minted
-     */
-    function depositETH(address receiver) external payable returns (uint256 sharesOut);
+    // /**
+    //  * @notice Deposit ETH into the vault
+    //  * @param receiver Address to receive shares
+    //  * @return sharesOut Amount of shares minted
+    //  */
+    // function depositETH(address receiver) external payable returns (uint256 sharesOut);
+
+    // Still need to test for gas consumption
+    function deposit2(uint256 assets, address receiver) external returns (uint256 shares);
 
     /**
      * @notice Burn shares and receive a single asset token
