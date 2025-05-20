@@ -149,16 +149,16 @@ interface IWeightedTreasuryVault {
     
     /**
      * @notice Execute rebalancing swaps
-     * @param data Swap data for the adapter
      */
-    function rebalance(bytes calldata data) external;
+    function rebalance() external;
+    
+
     
     /**
      * @notice Set new weights and rebalance in one transaction
-     * @param data Swap data for the adapter
      * @param w New weights array in basis points (must sum to 10000)
      */
-    function setWeightsAndRebalance(bytes calldata data, uint256[] calldata w) external;
+    function setWeightsAndRebalance(uint256[] calldata w) external;
     
     /**
      * @notice Check if the vault needs rebalancing

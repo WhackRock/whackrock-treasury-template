@@ -1,47 +1,66 @@
 // SPDX-License-Identifier: BUSL-1.1
-// Copyright (C) 2024 WhackRock Labs. All rights reserved.
+// © 2024 WhackRock Labs – All rights reserved.
+// WHACKROCK – AGENT‑MANAGED WEIGHTED VAULT
 pragma solidity ^0.8.20;
 
-import { ERC20 }        from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import { ERC4626 }      from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
-import { IERC20 }       from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { SafeERC20 }    from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { Ownable }      from "@openzeppelin/contracts/access/Ownable.sol";
-import { Math }         from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import { ISwapAdapter } from "./interfaces/ISwapAdapter.sol";
-import { IPriceOracle } from "./interfaces/IPriceOracle.sol";
-import { IWeightedTreasuryVault } from "./interfaces/IWeightedTreasuryVault.sol";
+
+import {ERC20}        from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ERC4626}      from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
+import {IERC20}       from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20}    from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Ownable}      from "@openzeppelin/contracts/access/Ownable.sol";
+
+import {ISwapAdapter}   from "./interfaces/ISwapAdapter.sol";
+import {IPriceOracle}   from "./interfaces/IPriceOracle.sol";
+import {IWeightedTreasuryVault} from "./interfaces/IWeightedTreasuryVault.sol";
 
 /**
  * @title WeightedTreasuryVault
- * @notice  • ERC-4626 share token (asset = USDC.b)  
- *          • Up-front mgmt fee (80 % dev / 20 % WRK)  
- *          • Emits NeedsRebalance if any asset drifts ±2 %  
- *          • Supports **basket withdraw** _and_ **single-asset withdraw**
+ * @notice  ▸ ERC‑4626 share token (accounting asset = USDC.b)
+ *          ▸ Up‑front management fee – 80 % dev / 20 % WRK 
+ *          ▸ Emits `NeedsRebalance` if ±2 % deviation *and* auto‑rebalance disabled
+ *          ▸ Supports basket withdraw, single‑asset withdraw, and ETH deposit
+ *          ▸ **Auto‑rebalances** on deposit/withdraw if enabled (USDC.b → hub token)
  */
 contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
     using SafeERC20 for IERC20;
 
-    /*══════════════ CONFIG ══════════════*/
+    /*//////////////////////////////////////////////////////////////
+                                 CONSTANTS
+    //////////////////////////////////////////////////////////////*/
     address public constant BASE_ETH = address(0);
-    uint16  public constant DEVIATION_BPS = 200;  // 2 %
+    uint16  public constant DEVIATION_BPS = 200;     // 2 % drift band
+    uint16  public constant AUTO_SLIPPAGE_BPS = 18;  // 0.18 % max slippage on auto‑swaps
 
-    address public immutable USDCb;
-    ISwapAdapter public immutable adapter;
-    IPriceOracle public immutable oracle;
-    address public immutable wrkRewards;
-    uint16  public immutable mgmtFeeBps;          // e.g. 200 = 2 %
+    /*//////////////////////////////////////////////////////////////
+                                 IMMUTABLES
+    //////////////////////////////////////////////////////////////*/
+    address      public immutable override USDCb;
+    ISwapAdapter public immutable override adapter;
+    IPriceOracle public immutable override oracle;
+    address      public immutable override wrkRewards;
+    uint16       public immutable override mgmtFeeBps;
 
-    /*══════════════ STATE ═══════════════*/
-    IERC20[]  public allowedAssets;               // max 8
-    uint256[] public targetWeights;               // 1e4 bps
-    address   public devWallet;
-    uint256   private stateId;
+    /*//////////////////////////////////////////////////////////////
+                                   STATE
+    //////////////////////////////////////////////////////////////*/
+    IERC20[]  public override allowedAssets;
+    uint256[] public override targetWeights;
+    address   public override devWallet;
 
+    bool public autoRebalanceEnabled = true;
+    uint256 private stateId;
 
-    /*══════════════ CONSTRUCTOR ═══════*/
+    /*//////////////////////////////////////////////////////////////
+                                    EVENTS
+    //////////////////////////////////////////////////////////////*/
+    event AutoRebalanceExecuted(uint256 tvlUsd, uint256 timestamp);
+    event AutoRebalanceSkipped(string reason, uint256 timestamp);
+
+    /*//////////////////////////////////////////////////////////////
+                                 CONSTRUCTOR
+    //////////////////////////////////////////////////////////////*/
     constructor(
         string   memory name_,
         string   memory sym_,
@@ -56,225 +75,132 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
         address  _rewards
     )
         ERC20(name_, sym_)
-        ERC4626(IERC20(_usdcb))   // USDC.b is the accounting asset
+        ERC4626(IERC20(_usdcb))
         Ownable(_manager)
     {
-        require(_feeBps <= 1_000, "fee > 10%");
-        require(_assets.length == _weights.length && _assets.length <= 8, "len");
+        require(_feeBps <= 1_000, "fee too high" );
+        require(_assets.length == _weights.length && _assets.length <= 8, "len err");
 
         uint256 s;
         for (uint i; i < _weights.length; ++i) s += _weights[i];
-        require(s == 1e4, "weights");
+        require(s == 1e4, "weights!10000");
 
-        USDCb  = _usdcb;
+        USDCb         = _usdcb;
         allowedAssets = _assets;
         targetWeights = _weights;
-        adapter   = _adapter;
-        oracle    = _oracle;
-        mgmtFeeBps= _feeBps;
-        devWallet = _dev;
-        wrkRewards= _rewards;
+        adapter       = _adapter;
+        oracle        = _oracle;
+        mgmtFeeBps    = _feeBps;
+        devWallet     = _dev;
+        wrkRewards    = _rewards;
 
         _approveTokens();
-        
-        // Initialize with a small amount of shares to prevent inflation attacks
-        _mint(owner(), 1e3); // Mint small amount to initialize
-        
-        _emitState();     // snapshot id 0
+        _mint(owner(), 1e3); // seed against inflation‑attack
+        _emitState();
     }
 
-    /*════════════ ERC-4626 VIEW ═══════*/
+    /*//////////////////////////////////////////////////////////////
+                           4626 VIEW – totalAssets
+    //////////////////////////////////////////////////////////////*/
     function totalAssets() public view override returns (uint256 usd) {
-        usd += address(this).balance * oracle.usdPrice(BASE_ETH) / 1e18;
+        if (address(this).balance != 0)
+            usd += address(this).balance * oracle.usdPrice(BASE_ETH) / 1e18;
+
         usd += IERC20(USDCb).balanceOf(address(this));
+
         for (uint i; i < allowedAssets.length; ++i) {
             address tok = address(allowedAssets[i]);
             if (tok == USDCb) continue;
             uint256 bal = allowedAssets[i].balanceOf(address(this));
-            usd += bal * oracle.usdPrice(tok) / 1e18;
+            if (bal != 0) usd += bal * oracle.usdPrice(tok) / 1e18;
         }
-    }
-    
-    // Add protection against inflation attacks in convertToShares
-    function convertToShares(uint256 assets)
-        public view override returns (uint256)
-    { 
-        uint256 supply = totalSupply();
-        uint256 _totalAssets = totalAssets();
-        
-        if (supply == 0 || _totalAssets == 0) {
-            // For the first deposit, use a fixed 1:1 ratio
-            return assets;
-        } else {
-            // Add a small virtual amount to both supply and assets 
-            // to make manipulation more expensive
-            uint256 virtualSupply = 1e18; // Small virtual shares
-            uint256 virtualAssets = 1e18; // Corresponding assets
-            
-            return assets * (supply + virtualSupply) / (_totalAssets + virtualAssets);
-        }
-    }
-    
-    function convertToAssets(uint256 shares)
-        public view override returns (uint256)
-    { 
-        uint256 supply = totalSupply();
-        if (supply == 0) return shares;
-        
-        // Add a small virtual amount to both supply and assets
-        uint256 virtualSupply = 1e18; // Small virtual shares
-        uint256 virtualAssets = 1e18; // Corresponding assets
-        
-        return shares * (totalAssets() + virtualAssets) / (supply + virtualSupply);
     }
 
-    /*════════════ DEPOSIT (USDC.b) ═════*/
-    function deposit(uint256 assets, address receiver)
-        public override  returns (uint256 sharesOut)
-    {
-        // Require minimum initial deposit for the first substantial deposit
-        if (totalSupply() <= 1e3) {
-            require(assets >= 1e6, "Initial deposit too small");
-        }
-    
-        IERC20(USDCb).safeTransferFrom(msg.sender, address(this), assets);
+    /*//////////////////////////////////////////////////////////////
+                           4626 VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+    /**
+     * @notice Returns the address of the underlying token used for the vault
+     * @return Asset address (USDCb)
+     */
+    function asset() public view override returns (address) {
+        return USDCb;
+    }
 
-        // Calculate fee on assets first
-        uint256 fee = assets * mgmtFeeBps / 10_000;
+    /**
+     * @notice Maximum amount of assets that can be deposited for a receiver
+     * @param receiver Address receiving the shares
+     * @return Maximum amount of assets that can be deposited
+     */
+    function maxDeposit(address receiver) public view override returns (uint256) {
+        return type(uint256).max;
+    }
+
+    /**
+     * @notice Maximum amount of shares that can be minted for a receiver
+     * @param receiver Address receiving the shares
+     * @return Maximum amount of shares that can be minted
+     */
+    function maxMint(address receiver) public view override returns (uint256) {
+        return type(uint256).max;
+    }
+
+    /**
+     * @notice Maximum amount of assets that can be withdrawn by an owner
+     * @param owner Address owning the shares
+     * @return Maximum amount of assets that can be withdrawn
+     */
+    function maxWithdraw(address owner) public view override returns (uint256) {
+        return convertToAssets(balanceOf(owner));
+    }
+
+    /**
+     * @notice Maximum amount of shares that can be redeemed by an owner
+     * @param owner Address owning the shares
+     * @return Maximum amount of shares that can be redeemed
+     */
+    function maxRedeem(address owner) public view override returns (uint256) {
+        return balanceOf(owner);
+    }
+
+    /**
+     * @notice Preview the amount of shares received for depositing assets
+     * @param assets Amount of assets to deposit
+     * @return Amount of shares that would be minted
+     */
+    function previewDeposit(uint256 assets) public view override returns (uint256) {
+        uint256 fee = (assets * mgmtFeeBps) / 10_000;
         uint256 netAssets = assets - fee;
-        
-        // Convert net assets to shares
-        uint256 netShares = convertToShares(netAssets);
-        require(netShares > 0, "0 shares");
-        
-        // Mint shares for fees and depositor
-        uint256 feeShares = convertToShares(fee);
-        _mint(devWallet, feeShares * 8_000 / 10_000);
-        _mint(wrkRewards, feeShares - (feeShares * 8_000 / 10_000));
-        _mint(receiver, netShares);
-        
-        sharesOut = netShares;
-
-        if (_needsRebalance()) emit NeedsRebalance(stateId, block.timestamp);
-        _emitState();
-    }
-
-    /*════════════ DEPOSIT ETH ══════════*/
-    // TODO: Remove native eth deposits from contracts
-    function depositETH(address receiver)
-        external payable  returns (uint256 sharesOut)
-    {
-        // Require minimum initial deposit for the first substantial deposit
-        if (totalSupply() <= 1e3) {
-            require(msg.value >= 1e15, "Initial deposit too small"); // 0.001 ETH minimum
-        }
-    
-        uint256 usd = msg.value * oracle.usdPrice(BASE_ETH) / 1e18;
-        
-        // Calculate fee on assets first
-        uint256 fee = usd * mgmtFeeBps / 10_000;
-        uint256 netAssets = usd - fee;
-        
-        // Convert net assets to shares
-        uint256 netShares = convertToShares(netAssets);
-        require(netShares > 0, "0 shares");
-        
-        // Mint shares for fees and depositor
-        uint256 feeShares = convertToShares(fee);
-        _mint(devWallet, feeShares * 8_000 / 10_000);
-        _mint(wrkRewards, feeShares - (feeShares * 8_000 / 10_000));
-        _mint(receiver, netShares);
-        
-        sharesOut = netShares;
-
-        if (_needsRebalance()) emit NeedsRebalance(stateId, block.timestamp);
-        _emitState();
-    }
-
-    /*════════════ WITHDRAW BASKET ══════*/
-    function withdraw(uint256 shares, address receiver, address owner)
-        public override  returns (uint256 assetsUsd)
-    {
-        if (owner != msg.sender) _spendAllowance(owner, msg.sender, shares);
-        assetsUsd = convertToAssets(shares);
-        _burn(owner, shares);
-
-        for (uint i; i < allowedAssets.length; ++i) {
-            uint256 usd = assetsUsd * targetWeights[i] / 1e4;
-            _payout(receiver, allowedAssets[i], usd);
-        }
-        if (_needsRebalance()) emit NeedsRebalance(stateId, block.timestamp);
-        _emitState();
-    }
-
-    /*══════════ SINGLE-ASSET WITHDRAW ══════*/
-    /**
-     * @notice Burn `shares` and receive everything in `tokenOut`.
-     * @param shares      Vault shares to redeem
-     * @param tokenOut    Desired token (must be in allowed list or WETH/USDCb)
-     * @param minOut      Slippage guard (tokenOut units)
-     * @param swapData    Universal Router calldata prepared off-chain
-     * @param receiver    Payout address
-     */
-    function withdrawSingle(
-        uint256 shares,
-        address tokenOut,
-        uint256 minOut,
-        bytes calldata swapData,
-        address receiver
-    ) external  returns (uint256 amountOut) {
-        require(_isAllowed(tokenOut), "token !allowed");
-
-        // Burn shares first (reduces sharePrice for fairness)
-        if (msg.sender != receiver) _spendAllowance(msg.sender, msg.sender, shares);
-        _burn(msg.sender, shares);
-
-        // Execute caller-supplied swaps (basket -> tokenOut)
-        if (swapData.length > 0) {
-            bool ok = adapter.execute(swapData);
-            require(ok, "swap fail");
-        }
-
-        // Final balance check
-        amountOut = _balanceOf(tokenOut);
-        require(amountOut >= minOut, "slippage");
-
-        _transferAsset(tokenOut, receiver, amountOut);
-
-        _emitState();
-    }
-
-    /*══════════ MANAGER OPS ═══════════*/
-    function setWeights(uint256[] calldata w) external onlyOwner {
-        _setWeights(w);
-        if (_needsRebalance()) emit NeedsRebalance(stateId, block.timestamp);
-        _emitState();
-    }
-    function setDevWallet(address d) external onlyOwner { 
-        require(d != address(0), "Zero address not allowed");
-        devWallet = d; 
-        _emitState(); 
-    }
-
-    function rebalance(bytes calldata data) external onlyOwner {
-        require(adapter.execute(data), "swap fail");
-        _emitState();
-    }
-    function setWeightsAndRebalance(bytes calldata data, uint256[] calldata w) external onlyOwner {
-        _setWeights(w);
-        require(adapter.execute(data), "swap fail");
-        require(!_needsRebalance(), "setWeightsAndRebalance failed");
-        _emitState();
+        return convertToShares(netAssets);
     }
 
     /**
-     * @notice Mint bootstrap shares for testing ERC4626 deposits when totalSupply is zero
-     * @dev This is only used for testing and should not be used in production
-     * @param shares Amount of shares to mint to the owner
+     * @notice Preview the amount of assets needed to mint shares
+     * @param shares Amount of shares to mint
+     * @return Amount of assets that would be needed
      */
-    function _mintBootstrapShares(uint256 shares) external onlyOwner {
-        _mint(owner(), shares);
-        _emitState();
+    function previewMint(uint256 shares) public view override returns (uint256) {
+        uint256 assets = convertToAssets(shares);
+        // Apply fee in reverse: assets + fee = deposit amount
+        return (assets * 10_000) / (10_000 - mgmtFeeBps);
+    }
+
+    /**
+     * @notice Preview the amount of shares needed to withdraw assets
+     * @param assets Amount of assets to withdraw
+     * @return Amount of shares that would be burned
+     */
+    function previewWithdraw(uint256 assets) public view override returns (uint256) {
+        return convertToShares(assets);
+    }
+
+    /**
+     * @notice Preview the amount of assets received for redeeming shares
+     * @param shares Amount of shares to redeem
+     * @return Amount of assets that would be received
+     */
+    function previewRedeem(uint256 shares) public view override returns (uint256) {
+        return convertToAssets(shares);
     }
 
     /**
@@ -285,97 +211,268 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
         return owner();
     }
 
-    /*══════════ VIEW HELPERS ══════════*/
-    function needsRebalance() external view returns (bool) { return _needsRebalance(); }
+    /**
+     * @notice Check if the vault needs rebalancing
+     * @return True if rebalancing is needed
+     */
+    function needsRebalance() external view override returns (bool) {
+        return _needsRebalance();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                           DEPOSIT / WITHDRAW BASE
+    //////////////////////////////////////////////////////////////*/
+    function deposit(uint256 assets, address receiver)
+        public override returns (uint256 sharesOut)
+    {
+        if (totalSupply() <= 1e3) require(assets >= 1e6, "seed small");
+
+        IERC20(USDCb).safeTransferFrom(msg.sender, address(this), assets);
+
+        uint256 fee = (assets * mgmtFeeBps) / 10_000;
+        uint256 net = assets - fee;
+
+        uint256 feeShares = convertToShares(fee);
+        _mint(devWallet,   (feeShares * 8_000) / 10_000);
+        _mint(wrkRewards,  feeShares - (feeShares * 8_000) / 10_000);
+
+        sharesOut = convertToShares(net);
+        _mint(receiver, sharesOut);
+
+        _maybeAutoRebalance();
+        _emitState();
+    }
 
     /**
-     * @notice Returns a full snapshot of the vault's value and composition, for subgraph indexing
+     * @notice Mint exactly `shares` vault shares to `receiver` by depositing assets
+     * @param shares Amount of shares to mint
+     * @param receiver Address to receive shares
+     * @return assets Amount of assets deposited
      */
-    function VaultSnapshot()
-        external
-        override
-        view
-        returns (
-            uint256 timestamp,
-            uint256 tvlUsd,
-            uint256 totalShares,
-            uint256 sharePrice,         // 18 decimals
-            address[] memory assets,
-            uint256[] memory assetBalances,
-            uint256[] memory assetValuesUsd,
-            uint256[] memory weights    // target weights, 1e4 bps
-        )
+    function mint(uint256 shares, address receiver) 
+        public override returns (uint256 assets) 
     {
-        uint256 _tvl = totalAssets();
-        uint256 _shares = totalSupply();
-        uint256 _sharePrice = (_shares == 0) ? 1e18 : (_tvl * 1e18) / _shares;
+        assets = previewMint(shares);
+        
+        IERC20(USDCb).safeTransferFrom(msg.sender, address(this), assets);
+        
+        // Calculate fee
+        uint256 fee = (assets * mgmtFeeBps) / 10_000;
+        
+        // Mint fee shares
+        uint256 feeShares = convertToShares(fee);
+        _mint(devWallet, (feeShares * 8_000) / 10_000);
+        _mint(wrkRewards, feeShares - (feeShares * 8_000) / 10_000);
+        
+        // Mint requested shares to receiver
+        _mint(receiver, shares);
+        
+        _maybeAutoRebalance();
+        _emitState();
+    }
 
-        uint n = allowedAssets.length;
-        address[] memory addrs = new address[](n);
-        uint256[] memory bals  = new uint256[](n);
-        uint256[] memory vals  = new uint256[](n);
-        for (uint i = 0; i < n; ++i) {
-            IERC20 token = allowedAssets[i];
-            addrs[i] = address(token);
-            bals[i] = token.balanceOf(address(this));
-            vals[i] = _getAssetValue(token);
+    /*//////////////////////////////////////////////////////////////
+                        ETH DEPOSIT WRAPPER
+    //////////////////////////////////////////////////////////////*/
+    function depositETH(address receiver) external payable override returns (uint256 sharesOut) {
+        uint256 usd = msg.value * oracle.usdPrice(BASE_ETH) / 1e18;
+        require(usd != 0, "zero dep");
+        // swap ETH->USDCb via adapter with 0 slippage guard (handled inside adapter)
+        bytes memory data = abi.encode(BASE_ETH, USDCb, msg.value, AUTO_SLIPPAGE_BPS);
+        require(adapter.execute{value: msg.value}(data), "eth swap fail");
+
+        sharesOut = deposit(usd, receiver); // reuse logic (now USDCb inside)
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             WITHDRAW BASKET
+    //////////////////////////////////////////////////////////////*/
+    function withdraw(uint256 shares, address receiver, address owner)
+        public override returns (uint256 assetsUsd)
+    {
+        if (owner != msg.sender) _spendAllowance(owner, msg.sender, shares);
+
+        assetsUsd = convertToAssets(shares);
+        _burn(owner, shares);
+
+        for (uint i; i < allowedAssets.length; ++i) {
+            uint256 usd = (assetsUsd * targetWeights[i]) / 1e4;
+            _payout(receiver, allowedAssets[i], usd);
         }
 
-        return (
-            block.timestamp,
-            _tvl,
-            _shares,
-            _sharePrice,
-            addrs,
-            bals,
-            vals,
-            targetWeights
-        );
+        _maybeAutoRebalance();
+        _emitState();
     }
 
+    /**
+     * @notice Redeem shares for assets, credits assets to receiver
+     * @param shares Amount of shares to redeem
+     * @param receiver Address to receive assets
+     * @param owner Owner of the shares
+     * @return assets Amount of assets redeemed
+     */
+    function redeem(uint256 shares, address receiver, address owner)
+        public override returns (uint256 assets)
+    {
+        return withdraw(shares, receiver, owner);
+    }
 
-    /*══════════ INTERNAL LIB ══════════*/
+    /*//////////////////////////////////////////////////////////////
+                      SINGLE‑ASSET WITHDRAW (via adapter)
+    //////////////////////////////////////////////////////////////*/
+    function withdrawSingle(
+        uint256 shares,
+        address tokenOut,
+        uint256 minOut,
+        bytes calldata swapData,
+        address receiver
+    ) external override returns (uint256 amountOut) {
+        require(_isAllowed(tokenOut), "!allowed");
+        if (msg.sender != receiver) _spendAllowance(msg.sender, msg.sender, shares);
+        _burn(msg.sender, shares);
+
+        if (swapData.length != 0) require(adapter.execute(swapData), "swap fail");
+
+        amountOut = _balanceOf(tokenOut);
+        require(amountOut >= minOut, "slip");
+        _transferAsset(tokenOut, receiver, amountOut);
+
+        _maybeAutoRebalance();
+        _emitState();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                          MANAGER‑ONLY FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+    function setWeights(uint256[] calldata w) public override onlyOwner {
+        _setWeights(w);
+        if (_needsRebalance()) emit NeedsRebalance(stateId, block.timestamp);
+        _emitState();
+    }
+
+    function setDevWallet(address d) external override onlyOwner {
+        require(d != address(0), "0addr");
+        devWallet = d;
+        _emitState();
+    }
+
+    function setAutoRebalanceEnabled(bool enabled) external onlyOwner {
+        autoRebalanceEnabled = enabled;
+        _emitState();
+    }
+
+    function rebalance() external override onlyOwner {
+        _rebalance();
+        _emitState();
+    }
+
+    function setWeightsAndRebalance(uint256[] calldata w) external override onlyOwner {
+        _setWeights(w);
+        _rebalance();
+        _emitState();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         INTERNAL REBALANCE LOGIC
+    //////////////////////////////////////////////////////////////*/
+    function _maybeAutoRebalance() internal {
+        if (!autoRebalanceEnabled) {
+            if (_needsRebalance()) emit NeedsRebalance(stateId, block.timestamp);
+            return;
+        }
+        if (_needsRebalance()) _rebalance(); else emit AutoRebalanceSkipped("Within band", block.timestamp);
+    }
+
+    function _rebalance() internal {
+        uint256 tvl = totalAssets();
+        if (tvl == 0) { emit AutoRebalanceSkipped("Zero TVL", block.timestamp); return; }
+
+        bool anySwap;
+        // ---- SELL overweight ----
+        for (uint i; i < allowedAssets.length; ++i) {
+            IERC20 token = allowedAssets[i];
+            if (address(token) == USDCb) continue;
+            uint256 cur = _getAssetValue(token);
+            uint256 tar = (tvl * targetWeights[i]) / 1e4;
+            if (cur <= tar + (tar * DEVIATION_BPS) / 10_000) continue;
+            uint256 excessUsd = cur - tar;
+            uint256 amountIn = (excessUsd * 1e18) / oracle.usdPrice(address(token));
+            if (amountIn == 0) continue;
+            bytes memory data = abi.encode(address(token), USDCb, amountIn, AUTO_SLIPPAGE_BPS);
+            require(adapter.execute(data), "sell");
+            anySwap = true;
+        }
+
+        // refresh tvl and usdc balance
+        if (anySwap) tvl = totalAssets();
+        uint256 usdcBal = IERC20(USDCb).balanceOf(address(this));
+        if (usdcBal == 0) { emit AutoRebalanceSkipped("No USDC", block.timestamp); return; }
+
+        // ---- BUY underweight ----
+        for (uint i; i < allowedAssets.length && usdcBal != 0; ++i) {
+            IERC20 token = allowedAssets[i];
+            if (address(token) == USDCb) continue;
+            uint256 cur = _getAssetValue(token);
+            uint256 tar = (tvl * targetWeights[i]) / 1e4;
+            if (tar <= cur + (tar * DEVIATION_BPS) / 10_000) continue;
+            uint256 deficitUsd = tar - cur;
+            if (deficitUsd > usdcBal) deficitUsd = usdcBal;
+            if (deficitUsd == 0) continue;
+            bytes memory data = abi.encode(USDCb, address(token), deficitUsd, AUTO_SLIPPAGE_BPS);
+            require(adapter.execute(data), "buy");
+            usdcBal -= deficitUsd;
+        }
+
+        emit AutoRebalanceExecuted(tvl, block.timestamp);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                              INTERNAL HELPERS
+    //////////////////////////////////////////////////////////////*/
     function _setWeights(uint256[] calldata w) internal {
         require(w.length == allowedAssets.length, "len");
-        uint sum;
+        uint256 sum;
         for (uint i; i < w.length; ++i) sum += w[i];
-        require(sum == 1e4, "sum");
+        require(sum == 1e4, "!=10000");
         targetWeights = w;
     }
+
     function _needsRebalance() internal view returns (bool) {
         uint256 tvl = totalAssets();
         if (tvl == 0) return false;
         for (uint i; i < allowedAssets.length; ++i) {
             uint256 cur = _getAssetValue(allowedAssets[i]);
-            uint256 tar = tvl * targetWeights[i] / 1e4;
+            uint256 tar = (tvl * targetWeights[i]) / 1e4;
             uint256 diff = cur > tar ? cur - tar : tar - cur;
             if (diff * 10_000 > tar * DEVIATION_BPS) return true;
         }
         return false;
     }
+
     function _getAssetValue(IERC20 t) internal view returns (uint256 usd) {
         address a = address(t);
         if (a == BASE_ETH) {
             usd = address(this).balance * oracle.usdPrice(BASE_ETH) / 1e18;
+        } else if (a == USDCb) {
+            usd = t.balanceOf(address(this));
         } else {
             uint256 bal = t.balanceOf(address(this));
-            usd = (a == USDCb) ? bal : bal * oracle.usdPrice(a) / 1e18;
+            usd = bal * oracle.usdPrice(a) / 1e18;
         }
     }
+
     function _approveTokens() internal {
-        for (uint i; i < allowedAssets.length; ++i)
-            allowedAssets[i].approve(address(adapter), type(uint).max);
+        for (uint i; i < allowedAssets.length; ++i) allowedAssets[i].approve(address(adapter), type(uint256).max);
+        IERC20(USDCb).approve(address(adapter), type(uint256).max);
     }
+
     function _emitState() internal {
-        uint tvl = totalAssets();
-        uint px  = totalSupply()==0 ? 1e18 : tvl * 1e18 / totalSupply();
+        uint256 tvl = totalAssets();
+        uint256 px  = totalSupply() == 0 ? 1e18 : (tvl * 1e18) / totalSupply();
         emit VaultState(++stateId, block.timestamp, tvl, px, targetWeights, devWallet);
     }
-    function _isAllowed(address tok) internal view returns (bool ok) {
-        if (tok == USDCb || tok == BASE_ETH) return true;
-        for (uint i; i < allowedAssets.length; ++i)
-            if (address(allowedAssets[i]) == tok) return true;
-    }
+
+    /*------------------------------------------------------------*/
     function _balanceOf(address tok) internal view returns (uint256) {
         return tok == BASE_ETH ? address(this).balance : IERC20(tok).balanceOf(address(this));
     }
@@ -387,14 +484,53 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
             IERC20(tok).safeTransfer(to, amt);
         }
     }
-    function _payout(address to, IERC20 token, uint256 usd) internal {
-        address a = address(token);
-        uint256 amt = (a == USDCb)
-            ? usd
-            : usd * 1e18 / oracle.usdPrice(a);
-        _transferAsset(a, to, amt);
+    function _isAllowed(address tok) internal view returns (bool ok) {
+        if (tok == USDCb || tok == BASE_ETH) return true;
+        for (uint i; i < allowedAssets.length; ++i) if (address(allowedAssets[i]) == tok) return true;
     }
 
-    /* Fallback for ETH unwrap */
+    function _payout(address to, IERC20 token, uint256 usd) internal {
+        address a = address(token);
+        uint256 amt = a == USDCb ? usd : (usd * 1e18) / oracle.usdPrice(a);
+        if (amt == 0) return;
+        token.safeTransfer(to, amt);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                              SUBGRAPH SNAPSHOT
+    //////////////////////////////////////////////////////////////*/
+    function VaultSnapshot()
+        external view override
+        returns (
+            uint256 timestamp,
+            uint256 tvlUsd,
+            uint256 totalShares,
+            uint256 sharePrice,
+            address[] memory assets,
+            uint256[] memory assetBalances,
+            uint256[] memory assetValuesUsd,
+            uint256[] memory weights
+        )
+    {
+        uint256 _tvl = totalAssets();
+        uint256 _shares = totalSupply();
+        uint256 _px = _shares == 0 ? 1e18 : (_tvl * 1e18) / _shares;
+        uint n = allowedAssets.length;
+        address[] memory addrs = new address[](n);
+        uint256[] memory bals  = new uint256[](n);
+        uint256[] memory vals  = new uint256[](n);
+        for (uint i; i < n; ++i) {
+            IERC20 tok = allowedAssets[i];
+   
+            addrs[i] = address(tok);
+            bals[i]  = tok.balanceOf(address(this));
+            vals[i]  = _getAssetValue(tok);
+        }
+        return (block.timestamp, _tvl, _shares, _px, addrs, bals, vals, targetWeights);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                                  RECEIVE
+    //////////////////////////////////////////////////////////////*/
     receive() external payable {}
 }
