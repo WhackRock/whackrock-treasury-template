@@ -257,7 +257,6 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
     function deposit(uint256 assets, address receiver)
         public override returns (uint256 sharesOut)
     {
-        uint256 tvlBefore = totalAssets();
         // Does this make sense?
         if (totalSupply() <= 1e3) require(assets >= 1e6, "seed small");
 
@@ -276,7 +275,7 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
         _maybeAutoRebalance();
         _emitState();
     }
-    
+
     /**
      * @notice Deposit `assets` (USDC.b) and mint shares to `receiver`.
      * @dev Protects against first‑mover inflation, external “gift‑grief” TVL
