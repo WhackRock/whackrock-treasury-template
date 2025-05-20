@@ -335,6 +335,6 @@ contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory, Ownable {
         // Add to owner mapping
         vaultsByOwner[manager].push(vault);
 
-        emit VaultCreated(vault, manager, weights, tag);
+        emit VaultCreated(vault, manager, allowedAssetsSubset, weights, tag, msg.sender );
     }
 }

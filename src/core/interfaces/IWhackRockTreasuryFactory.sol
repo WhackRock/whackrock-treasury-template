@@ -14,14 +14,18 @@ interface IWhackRockTreasuryFactory {
      * @notice Emitted when a new vault is created
      * @param vault The address of the created vault
      * @param manager The address of the vault manager
+     * @param allowedAssetsSubset The list of all allowed assets
      * @param weights The initial asset weights
      * @param tag The vault tag (e.g. "AGENT" or "FUND")
+     * @param creator The address of the creator
      */
     event VaultCreated(
         address vault,
         address manager,
+        address[] allowedAssetsSubset,
         uint256[] weights,
-        bytes32 tag
+        bytes32 tag,
+        address creator
     );
     
     /**

@@ -28,9 +28,12 @@ contract WhackRockTreasuryFactoryTest is Test {
     event VaultCreated(
         address vault,
         address manager,
+        address[] allowedAssetsSubset,
         uint256[] weights,
-        bytes32 tag
+        bytes32 tag,
+        address creator
     );
+    
     
     event AllowedAssetsUpdated(address[] newAssets);
     
