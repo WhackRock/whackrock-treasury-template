@@ -196,7 +196,7 @@ interface IWhackRockTreasuryFactory {
      * @param tag "AGENT" or "FUND" – for indexers/front‑end
      * @return vault The address of the created vault
      */
-    function createVault(
+    function createWhackRockVault(
         string calldata name,
         string calldata sym,
         address[] calldata allowedAssetsSubset,

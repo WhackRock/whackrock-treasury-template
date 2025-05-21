@@ -114,7 +114,7 @@ contract DeployScript is Script {
         vaultWeights[2] = 2000;  // 20% Third asset
         
         // Create the vault
-        address initialVault = factory.createVault(
+        address initialVault = factory.createWhackRockVault(
             "WhackRock Treasury Alpha", 
             "WRTA",
             vaultAssets,

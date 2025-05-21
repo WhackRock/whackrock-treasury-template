@@ -99,7 +99,7 @@ contract DeploySepoliaScript  {
     //     weights[1] = 2000; // 20% WBTC
     //     weights[2] = 3000; // 30% USDC
         
-    //     address sampleVault = factory.createVault(
+    //     address sampleVault = factory.createWhackRockVault(
     //         "WhackRock Sample Treasury",
     //         "WRST",
     //         weights,

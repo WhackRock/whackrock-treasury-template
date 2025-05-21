@@ -123,7 +123,7 @@ contract WhackRockTreasuryFactoryTest is Test {
         string memory vaultSymbol = "TSTVLT";
         
         // Create vault - don't check event here since we can't easily predict the vault address
-        address payable vault = payable(factory.createVault(
+        address payable vault = payable(factory.createWhackRockVault(
             vaultName,
             vaultSymbol,
             vaultAssets,
@@ -171,7 +171,7 @@ contract WhackRockTreasuryFactoryTest is Test {
 
         string memory vaultName = "Duplicate Name";
         
-        factory.createVault(
+        factory.createWhackRockVault(
             vaultName,
             "TSTVLT",
             vaultAssets,
@@ -184,7 +184,7 @@ contract WhackRockTreasuryFactoryTest is Test {
         
         // Try to create second vault with same name
         vm.expectRevert("Treasury name already taken");
-        factory.createVault(
+        factory.createWhackRockVault(
             vaultName,
             "TSTVLT2",
             vaultAssets,
@@ -208,7 +208,7 @@ contract WhackRockTreasuryFactoryTest is Test {
         weights1[1] = 3000;
         weights1[2] = 3000;
         
-        address vault1 = factory.createVault(
+        address vault1 = factory.createWhackRockVault(
             "First Vault",
             "FIRST",
             vaultAssets1,
@@ -230,7 +230,7 @@ contract WhackRockTreasuryFactoryTest is Test {
         weights2[1] = 3000;
         weights2[2] = 5000;
         
-        address vault2 = factory.createVault(
+        address vault2 = factory.createWhackRockVault(
             "Second Vault",
             "SECOND",
             vaultAssets2,
@@ -438,7 +438,7 @@ contract WhackRockTreasuryFactoryTest is Test {
         weights[2] = 3000;
         
         vm.expectRevert("asset not allowed");
-        factory.createVault(
+        factory.createWhackRockVault(
             "Invalid Asset Vault",
             "INVALID",
             vaultAssets,
@@ -463,7 +463,7 @@ contract WhackRockTreasuryFactoryTest is Test {
         weights[2] = 2000; // Total: 9000, not 10000
         
         vm.expectRevert("weights");
-        factory.createVault(
+        factory.createWhackRockVault(
             "Invalid Weights Vault",
             "INVALID",
             vaultAssets,
@@ -486,7 +486,7 @@ contract WhackRockTreasuryFactoryTest is Test {
         weights[1] = 5000;
         
         vm.expectRevert("must include USDC.b");
-        factory.createVault(
+        factory.createWhackRockVault(
             "No USDC Vault",
             "NOUSDC",
             vaultAssets,

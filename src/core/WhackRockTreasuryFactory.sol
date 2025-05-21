@@ -3,7 +3,7 @@
 pragma solidity ^0.8.20;
 
 
-import { WeightedTreasuryVault } from "./WeightedTreasuryVault.sol";
+import { WeightedTreasuryVault_TESTING } from "./WeightedTreasuryVault_TESTING.sol";
 import "./interfaces/ISwapAdapter.sol";
 import "./interfaces/IPriceOracle.sol";
 import "./interfaces/IWhackRockTreasuryFactory.sol";
@@ -258,7 +258,7 @@ contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory, Ownable {
      * @param devWallet     receives 80 % of that fee
      * @param tag           "AGENT" or "FUND" – for indexers/front‑end
      */
-    function createVault(
+    function createWhackRockVault(
         string   calldata name,
         string   calldata sym,
         address[] calldata allowedAssetsSubset,
@@ -314,7 +314,7 @@ contract WhackRockTreasuryFactory is IWhackRockTreasuryFactory, Ownable {
         }
 
         // Deploy new WeightedTreasuryVault via new keyword
-        vault = address(new WeightedTreasuryVault(
+        vault = address(new WeightedTreasuryVault_TESTING(
             name,
             sym,
             USDCb,
