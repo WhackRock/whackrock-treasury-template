@@ -1,66 +1,26 @@
-## Foundry
+## Base Mainet Foundry Tested
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
 
-Foundry consists of:
+### To run the tests on forked base main net:  
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+Add this to your foundry.toml:
 
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
-
-```shell
-$ forge build
 ```
-
-### Test
-
-```shell
-$ forge test
+# profile for Base mainnet forking
+[profile.base_fork]
+# Inherit from default profile
+src = "src"
+out = "out"
+libs = ["lib"]
+# Replace with your actual Base Mainnet RPC URL
+fork_url = "https://mainnet.base.org"
+fork_block_number = 30483478 
 ```
-
-### Format
-
-```shell
-$ forge fmt
+Set profile to base_fork:
 ```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
+$env:FOUNDRY_PROFILE="base_fork"
 ```
-
-### Anvil
-
-```shell
-$ anvil
+Then test:
 ```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
+forge test --fork-url "https://mainnet.base.org"  -vvvv
 ```
