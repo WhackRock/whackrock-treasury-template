@@ -19,7 +19,7 @@ pragma solidity ^0.8.20;
 import "forge-std/Test.sol";
 import "forge-std/console.sol";
 
-// Ensure this path matches your actual contract file name in the src directory
+
 import {WhackRockFund} from "../src/WhackRockFundV5_ERC4626_Aerodrome_SubGEvents.sol";
 import {IAerodromeRouter} from "../src/interfaces/IRouter.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -435,17 +435,8 @@ contract WhackRockFundTest is Test {
 
         uint256 navAfterSecondRebalance = whackRockFund.totalNAVInAccountingAsset();
 
-        // After selling all allowed tokens, WETH balance should be significant.
-        // The previous assertion `assertTrue(wethBalAfter < 1e15)` is no longer valid for this trace.
-        // Instead, the fund should be mostly WETH, and allowed tokens near zero.
-        // However, _rebalance will then try to buy them back if targets are not 0% WETH.
-        // This test's premise ("already balanced") is tricky with unconditional _rebalance.
-        // The trace shows it sells, then the NAV is calculated.
-        // Let's check that the NAV is roughly conserved.
         assertApproxEqAbs(navAfterSecondRebalance, navBeforeSecondRebalance, navBeforeSecondRebalance / 2000); // 0.05% NAV tolerance for swaps
 
-        // The key is that after this aggressive rebalance (sell all, then buy back to targets implied by _rebalance),
-        // the weights should still be met.
         uint256 usdcValueWETH = _getValueInAccountingAsset(USDC_BASE, tokenA_USDC.balanceOf(address(whackRockFund)));
         uint256 cbethValueWETH = _getValueInAccountingAsset(CBETH_BASE, tokenB_CBETH.balanceOf(address(whackRockFund)));
         uint256 virtuValueWETH = _getValueInAccountingAsset(VIRTU_BASE, tokenC_VIRTU.balanceOf(address(whackRockFund)));
@@ -490,6 +481,4 @@ contract WhackRockFundTest is Test {
         assertEq(nonAllowed.balanceOf(address(whackRockFund)), amountToSteal);
     }
 
-    // testEmergencyWithdrawNative was commented out by user, keeping it commented.
-    // function testEmergencyWithdrawNative() public { ... }
 }
