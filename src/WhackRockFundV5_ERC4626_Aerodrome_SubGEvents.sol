@@ -7,41 +7,8 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
-
-/**
- * @title IWETH
- * @dev Minimal interface for WETH (Wrapped Ether), needed by IAerodromeRouter.
- */
-interface IWETH is IERC20 {
-    function deposit() external payable;
-    function withdraw(uint256 wad) external;
-}
-
-/**
- * @title IAerodromeRouter
- * @dev Interface for the Aerodrome Router, based on official IRouter.sol.
- */
-interface IAerodromeRouter {
-    struct Route {
-        address from;
-        address to;
-        bool stable;
-        address factory;
-    }
-
-    function defaultFactory() external view returns (address);
-    function weth() external view returns (IWETH);
-
-    function swapExactTokensForTokens(
-        uint amountIn,
-        uint amountOutMin,
-        Route[] calldata routes,
-        address to,
-        uint deadline
-    ) external returns (uint256[] memory amounts);
-
-    function getAmountsOut(uint amountIn, Route[] memory routes) external view returns (uint[] memory amounts);
-}
+import {IAerodromeRouter} from "./interfaces/IRouter.sol";
+import {IWhackRockFund} from "./interfaces/IWhackRockFund.sol";
 
 /**
  * @title WhackRockFund
@@ -50,7 +17,7 @@ interface IAerodromeRouter {
  * if weights deviate beyond a defined threshold.
  * Shares of this fund are ERC20 tokens.
  */
-contract WhackRockFund is ERC20, Ownable {
+contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     using SafeERC20 for IERC20;
 
     struct TokenRebalanceInfo {
@@ -75,34 +42,7 @@ contract WhackRockFund is ERC20, Ownable {
     bool public constant DEFAULT_POOL_STABILITY = false;
     uint256 private constant MINIMUM_SHARES_LIQUIDITY = 1000;
     // NEW: Threshold for triggering rebalance, e.g., 100 BPS = 1% deviation
-    uint256 public constant REBALANCE_DEVIATION_THRESHOLD_BPS = 100; 
-
-
-    event AgentUpdated(address indexed oldAgent, address indexed newAgent);
-    event TargetWeightsUpdated(address[] tokens, uint256[] weights);
-    event RebalanceCheck(bool needed, uint256 maxDeviationBPS); // For debugging/info
-    event RebalanceCycleExecuted(
-        uint256 navBeforeRebalanceAA,
-        uint256 navAfterRebalanceAA,
-        uint256 blockTimestamp
-    );
-    event FundTokenSwapped(address indexed tokenFrom, uint256 amountFrom, address indexed tokenTo, uint256 amountTo);
-    event EmergencyWithdrawal(address indexed token, uint256 amount);
-    
-    event WETHDepositedAndSharesMinted(
-        address indexed depositor,
-        address indexed receiver,
-        uint256 wethDeposited,
-        uint256 sharesMinted
-    );
-    event BasketAssetsWithdrawn(
-        address indexed owner,
-        address indexed receiver,
-        uint256 sharesBurned,
-        address[] tokensWithdrawn,
-        uint256[] amountsWithdrawn
-    );
-
+    uint256 public constant REBALANCE_DEVIATION_THRESHOLD_BPS = 100;
 
     modifier onlyAgent() {
         require(msg.sender == agent, "WRF: Caller is not the agent");
@@ -117,10 +57,7 @@ contract WhackRockFund is ERC20, Ownable {
         uint256[] memory _initialTargetWeights,
         string memory _vaultName,
         string memory _vaultSymbol
-    )
-        ERC20(_vaultName, _vaultSymbol)
-        Ownable(_initialOwner)
-    {
+    ) ERC20(_vaultName, _vaultSymbol) Ownable(_initialOwner) {
         require(_initialAgent != address(0), "WRF: Initial agent cannot be zero address");
         require(_dexRouterAddress != address(0), "WRF: DEX router cannot be zero address");
         IAerodromeRouter tempRouter = IAerodromeRouter(_dexRouterAddress);
@@ -128,14 +65,17 @@ contract WhackRockFund is ERC20, Ownable {
         require(ACCOUNTING_ASSET != address(0), "WRF: Accounting asset (WETH) not found");
 
         require(_initialAllowedTokens.length > 0, "WRF: No allowed tokens provided");
-        require(_initialAllowedTokens.length == _initialTargetWeights.length, "WRF: Allowed tokens and weights length mismatch");
+        require(
+            _initialAllowedTokens.length == _initialTargetWeights.length,
+            "WRF: Allowed tokens and weights length mismatch"
+        );
 
         agent = _initialAgent;
         dexRouter = tempRouter;
         allowedTokens = _initialAllowedTokens;
 
         uint256 currentTotalWeight = 0;
-        for (uint i = 0; i < _initialAllowedTokens.length; i++) {
+        for (uint256 i = 0; i < _initialAllowedTokens.length; i++) {
             address currentToken = _initialAllowedTokens[i];
             require(currentToken != address(0), "WRF: Token address cannot be zero");
             require(currentToken != ACCOUNTING_ASSET, "WRF: Accounting asset (WETH) cannot be in allowedTokens list");
@@ -155,7 +95,7 @@ contract WhackRockFund is ERC20, Ownable {
 
     function totalNAVInAccountingAsset() public view returns (uint256 totalManagedAssets) {
         totalManagedAssets = 0;
-        for (uint i = 0; i < allowedTokens.length; i++) {
+        for (uint256 i = 0; i < allowedTokens.length; i++) {
             address currentToken = allowedTokens[i];
             uint256 balance = IERC20(currentToken).balanceOf(address(this));
             if (balance > 0) {
@@ -174,20 +114,20 @@ contract WhackRockFund is ERC20, Ownable {
     function _isRebalanceNeeded() internal view returns (bool, uint256 maxDeviationBPS) {
         uint256 currentNAV = totalNAVInAccountingAsset();
         if (currentNAV == 0) {
-            return (false, 0); 
+            return (false, 0);
         }
 
         maxDeviationBPS = 0;
         bool needsRebalance = false;
 
-        for (uint i = 0; i < allowedTokens.length; i++) {
+        for (uint256 i = 0; i < allowedTokens.length; i++) {
             address currentToken = allowedTokens[i];
             uint256 tokenBalance = IERC20(currentToken).balanceOf(address(this));
             uint256 tokenValueInAA = _getTokenValueInAccountingAsset(currentToken, tokenBalance);
-            
+
             uint256 actualWeightBPS = (tokenValueInAA * TOTAL_WEIGHT_BASIS_POINTS) / currentNAV;
             uint256 targetWeightBPS = targetWeights[currentToken];
-            
+
             uint256 deviation;
             if (actualWeightBPS > targetWeightBPS) {
                 deviation = actualWeightBPS - targetWeightBPS;
@@ -201,21 +141,11 @@ contract WhackRockFund is ERC20, Ownable {
 
             if (deviation > REBALANCE_DEVIATION_THRESHOLD_BPS) {
                 needsRebalance = true;
-                // We can break early if one token already exceeds threshold,
-                // but calculating maxDeviationBPS might be useful for event/logging.
-                // For now, let's continue to find maxDeviationBPS.
             }
         }
-        
-        // Also check deviation for the ACCOUNTING_ASSET (WETH) itself if it's not explicitly weighted
-        // but its implied weight is (100% - sum of allowedToken weights).
-        // For simplicity, current logic assumes allowedTokens sum to 100%.
-        // If not, WETH's target weight would need to be considered.
-        // The current _rebalance logic implicitly handles WETH.
 
         return (needsRebalance, maxDeviationBPS);
     }
-
 
     function deposit(uint256 amountWETHToDeposit, address receiver) external returns (uint256 sharesMinted) {
         require(amountWETHToDeposit > 0, "WRF: Deposit amount must be > 0");
@@ -227,7 +157,7 @@ contract WhackRockFund is ERC20, Ownable {
         if (currentTotalSupply == 0) {
             sharesMinted = amountWETHToDeposit; // Simplified for first deposit
             if (sharesMinted < MINIMUM_SHARES_LIQUIDITY && amountWETHToDeposit > 0) {
-                 sharesMinted = MINIMUM_SHARES_LIQUIDITY;
+                sharesMinted = MINIMUM_SHARES_LIQUIDITY;
             }
         } else {
             require(nav > 0, "WRF: Cannot deposit to empty vault with existing shares");
@@ -239,11 +169,12 @@ contract WhackRockFund is ERC20, Ownable {
         _mint(receiver, sharesMinted);
 
         emit WETHDepositedAndSharesMinted(msg.sender, receiver, amountWETHToDeposit, sharesMinted);
-        
+
         (bool needsRebalance, uint256 maxDeviationBPS) = _isRebalanceNeeded();
         emit RebalanceCheck(needsRebalance, maxDeviationBPS);
-        if (needsRebalance || currentTotalSupply == 0) { // Also rebalance if it was the first deposit into an empty fund
-            _rebalance(); 
+        if (needsRebalance || currentTotalSupply == 0) {
+            // Also rebalance if it was the first deposit into an empty fund
+            _rebalance();
         }
         return sharesMinted;
     }
@@ -257,9 +188,9 @@ contract WhackRockFund is ERC20, Ownable {
             revert ERC20InsufficientAllowance(msg.sender, allowance(owner, msg.sender), sharesToBurn);
         }
         if (owner != msg.sender) {
-             _spendAllowance(owner, msg.sender, sharesToBurn);
+            _spendAllowance(owner, msg.sender, sharesToBurn);
         }
-        
+
         uint256 currentTotalSupply = totalSupply();
         require(currentTotalSupply >= sharesToBurn, "WRF: Burn amount exceeds total supply");
         require(balanceOf(owner) >= sharesToBurn, "WRF: Insufficient shares to burn");
@@ -280,7 +211,7 @@ contract WhackRockFund is ERC20, Ownable {
             }
         }
 
-        for (uint i = 0; i < allowedTokens.length; i++) {
+        for (uint256 i = 0; i < allowedTokens.length; i++) {
             address currentToken = allowedTokens[i];
             uint256 tokenBalance = IERC20(currentToken).balanceOf(address(this));
             if (tokenBalance > 0 && currentTotalSupply > 0) {
@@ -293,24 +224,24 @@ contract WhackRockFund is ERC20, Ownable {
                 }
             }
         }
-        
+
         _burn(owner, sharesToBurn);
 
         address[] memory finalTokensWithdrawn = new address[](eventIdx);
         uint256[] memory finalAmountsWithdrawn = new uint256[](eventIdx);
-        for(uint k=0; k < eventIdx; k++){
+        for (uint256 k = 0; k < eventIdx; k++) {
             finalTokensWithdrawn[k] = tokensWithdrawn[k];
             finalAmountsWithdrawn[k] = amountsWithdrawn[k];
         }
         emit BasketAssetsWithdrawn(owner, receiver, sharesToBurn, finalTokensWithdrawn, finalAmountsWithdrawn);
-        
+
         (bool needsRebalance, uint256 maxDeviationBPS) = _isRebalanceNeeded();
         emit RebalanceCheck(needsRebalance, maxDeviationBPS);
-        if (needsRebalance && totalSupply() > 0) { // Only rebalance if there are shares left
+        if (needsRebalance && totalSupply() > 0) {
+            // Only rebalance if there are shares left
             _rebalance();
         }
     }
-
 
     function setAgent(address _newAgent) external onlyOwner {
         require(_newAgent != address(0), "WRF: New agent cannot be zero address");
@@ -322,14 +253,14 @@ contract WhackRockFund is ERC20, Ownable {
     function setTargetWeights(uint256[] calldata _weights) external onlyAgent {
         require(_weights.length == allowedTokens.length, "WRF: Weights length mismatch");
         uint256 currentTotalWeight = 0;
-        for (uint i = 0; i < _weights.length; i++) {
+        for (uint256 i = 0; i < _weights.length; i++) {
             require(_weights[i] > 0, "WRF: Weight must be > 0");
             currentTotalWeight += _weights[i];
         }
         require(currentTotalWeight == TOTAL_WEIGHT_BASIS_POINTS, "WRF: Weights do not sum to total");
 
         address[] memory tokensForEvent = new address[](allowedTokens.length);
-        for (uint i = 0; i < allowedTokens.length; i++) {
+        for (uint256 i = 0; i < allowedTokens.length; i++) {
             targetWeights[allowedTokens[i]] = _weights[i];
             tokensForEvent[i] = allowedTokens[i];
         }
@@ -349,24 +280,34 @@ contract WhackRockFund is ERC20, Ownable {
 
         TokenRebalanceInfo[] memory rebalanceInfos = new TokenRebalanceInfo[](allowedTokens.length);
 
-        for (uint i = 0; i < allowedTokens.length; i++) {
+        for (uint256 i = 0; i < allowedTokens.length; i++) {
             address currentToken = allowedTokens[i];
             rebalanceInfos[i].token = currentToken;
             rebalanceInfos[i].currentBalance = IERC20(currentToken).balanceOf(address(this));
-            rebalanceInfos[i].currentValueInAccountingAsset = _getTokenValueInAccountingAsset(currentToken, rebalanceInfos[i].currentBalance);
-            rebalanceInfos[i].targetValueInAccountingAsset = (currentPortfolioNAVForTargets * targetWeights[currentToken]) / TOTAL_WEIGHT_BASIS_POINTS;
-            rebalanceInfos[i].deltaValueInAccountingAsset = int256(rebalanceInfos[i].targetValueInAccountingAsset) - int256(rebalanceInfos[i].currentValueInAccountingAsset);
+            rebalanceInfos[i].currentValueInAccountingAsset =
+                _getTokenValueInAccountingAsset(currentToken, rebalanceInfos[i].currentBalance);
+            rebalanceInfos[i].targetValueInAccountingAsset =
+                (currentPortfolioNAVForTargets * targetWeights[currentToken]) / TOTAL_WEIGHT_BASIS_POINTS;
+            rebalanceInfos[i].deltaValueInAccountingAsset = int256(rebalanceInfos[i].targetValueInAccountingAsset)
+                - int256(rebalanceInfos[i].currentValueInAccountingAsset);
         }
 
-        for (uint i = 0; i < rebalanceInfos.length; i++) {
+        for (uint256 i = 0; i < rebalanceInfos.length; i++) {
             if (rebalanceInfos[i].deltaValueInAccountingAsset < 0) {
                 uint256 valueToSellInAA = uint256(-rebalanceInfos[i].deltaValueInAccountingAsset);
                 uint256 amountToSellInTokenUnits;
                 if (rebalanceInfos[i].currentValueInAccountingAsset > 0) {
-                    amountToSellInTokenUnits = Math.min(rebalanceInfos[i].currentBalance, (rebalanceInfos[i].currentBalance * valueToSellInAA) / rebalanceInfos[i].currentValueInAccountingAsset);
-                } else { amountToSellInTokenUnits = 0; }
+                    amountToSellInTokenUnits = Math.min(
+                        rebalanceInfos[i].currentBalance,
+                        (rebalanceInfos[i].currentBalance * valueToSellInAA)
+                            / rebalanceInfos[i].currentValueInAccountingAsset
+                    );
+                } else {
+                    amountToSellInTokenUnits = 0;
+                }
                 if (amountToSellInTokenUnits == 0) continue;
-                amountToSellInTokenUnits = Math.min(amountToSellInTokenUnits, IERC20(rebalanceInfos[i].token).balanceOf(address(this)));
+                amountToSellInTokenUnits =
+                    Math.min(amountToSellInTokenUnits, IERC20(rebalanceInfos[i].token).balanceOf(address(this)));
                 if (amountToSellInTokenUnits == 0) continue;
                 _swapTokens(rebalanceInfos[i].token, ACCOUNTING_ASSET, amountToSellInTokenUnits, DEFAULT_SLIPPAGE_BPS);
             }
@@ -375,15 +316,19 @@ contract WhackRockFund is ERC20, Ownable {
         uint256 availableAccountingAssetForBuys = IERC20(ACCOUNTING_ASSET).balanceOf(address(this));
         if (availableAccountingAssetForBuys == 0) return;
         uint256 totalAccountingAssetNeededForBuys = 0;
-        for (uint i = 0; i < rebalanceInfos.length; i++) {
-            if (rebalanceInfos[i].deltaValueInAccountingAsset > 0) { totalAccountingAssetNeededForBuys += uint256(rebalanceInfos[i].deltaValueInAccountingAsset); }
+        for (uint256 i = 0; i < rebalanceInfos.length; i++) {
+            if (rebalanceInfos[i].deltaValueInAccountingAsset > 0) {
+                totalAccountingAssetNeededForBuys += uint256(rebalanceInfos[i].deltaValueInAccountingAsset);
+            }
         }
         if (totalAccountingAssetNeededForBuys == 0) return;
 
-        for (uint i = 0; i < rebalanceInfos.length; i++) {
+        for (uint256 i = 0; i < rebalanceInfos.length; i++) {
             if (rebalanceInfos[i].deltaValueInAccountingAsset > 0) {
                 uint256 idealAAToSpend = uint256(rebalanceInfos[i].deltaValueInAccountingAsset);
-                uint256 actualAAToSpend = (idealAAToSpend * Math.min(availableAccountingAssetForBuys, totalAccountingAssetNeededForBuys)) / totalAccountingAssetNeededForBuys;
+                uint256 actualAAToSpend = (
+                    idealAAToSpend * Math.min(availableAccountingAssetForBuys, totalAccountingAssetNeededForBuys)
+                ) / totalAccountingAssetNeededForBuys;
                 uint256 currentAABalance = IERC20(ACCOUNTING_ASSET).balanceOf(address(this));
                 actualAAToSpend = Math.min(actualAAToSpend, currentAABalance);
                 if (actualAAToSpend == 0) continue;
@@ -398,13 +343,20 @@ contract WhackRockFund is ERC20, Ownable {
 
         IAerodromeRouter.Route[] memory routes = new IAerodromeRouter.Route[](1);
         routes[0] = IAerodromeRouter.Route({
-            from: _tokenIn, to: _tokenOut, stable: DEFAULT_POOL_STABILITY, factory: dexRouter.defaultFactory()
+            from: _tokenIn,
+            to: _tokenOut,
+            stable: DEFAULT_POOL_STABILITY,
+            factory: dexRouter.defaultFactory()
         });
 
         uint256[] memory expectedAmountsOut = dexRouter.getAmountsOut(_amountIn, routes);
-        require(expectedAmountsOut.length > 0 && expectedAmountsOut[expectedAmountsOut.length - 1] > 0, "WRF: Expected swap output is zero");
+        require(
+            expectedAmountsOut.length > 0 && expectedAmountsOut[expectedAmountsOut.length - 1] > 0,
+            "WRF: Expected swap output is zero"
+        );
         uint256 expectedAmountOut = expectedAmountsOut[expectedAmountsOut.length - 1];
-        uint256 amountOutMin = (expectedAmountOut * (TOTAL_WEIGHT_BASIS_POINTS - _slippageBps)) / TOTAL_WEIGHT_BASIS_POINTS;
+        uint256 amountOutMin =
+            (expectedAmountOut * (TOTAL_WEIGHT_BASIS_POINTS - _slippageBps)) / TOTAL_WEIGHT_BASIS_POINTS;
 
         uint256[] memory actualAmounts = dexRouter.swapExactTokensForTokens(
             _amountIn, amountOutMin, routes, address(this), block.timestamp + SWAP_DEADLINE_OFFSET
@@ -415,17 +367,24 @@ contract WhackRockFund is ERC20, Ownable {
 
     function _getTokenValueInAccountingAsset(address _token, uint256 _amount) internal view returns (uint256) {
         if (_amount == 0) return 0;
-        require(_token != ACCOUNTING_ASSET, "WRF: _getTokenValueInAccountingAsset called for the accounting asset itself");
+        require(
+            _token != ACCOUNTING_ASSET, "WRF: _getTokenValueInAccountingAsset called for the accounting asset itself"
+        );
 
         IAerodromeRouter.Route[] memory routes = new IAerodromeRouter.Route[](1);
         routes[0] = IAerodromeRouter.Route({
-            from: _token, to: ACCOUNTING_ASSET, stable: DEFAULT_POOL_STABILITY, factory: dexRouter.defaultFactory()
+            from: _token,
+            to: ACCOUNTING_ASSET,
+            stable: DEFAULT_POOL_STABILITY,
+            factory: dexRouter.defaultFactory()
         });
 
-        try dexRouter.getAmountsOut(_amount, routes) returns (uint[] memory amounts) {
-            if (amounts.length > 0) { return amounts[amounts.length - 1]; }
+        try dexRouter.getAmountsOut(_amount, routes) returns (uint256[] memory amounts) {
+            if (amounts.length > 0) return amounts[amounts.length - 1];
             return 0;
-        } catch { return 0; }
+        } catch {
+            return 0;
+        }
     }
 
     function _approveTokenIfNeeded(IERC20 _tokenContract, address _spender, uint256 _amount) internal {
@@ -433,7 +392,7 @@ contract WhackRockFund is ERC20, Ownable {
             _tokenContract.approve(_spender, _amount);
         }
     }
-    
+
     function emergencyWithdrawERC20(address _tokenAddress, address _to, uint256 _amount) external onlyOwner {
         require(_to != address(0), "WRF: Cannot withdraw to zero address");
         IERC20 tokenToWithdraw = IERC20(_tokenAddress);
@@ -447,7 +406,7 @@ contract WhackRockFund is ERC20, Ownable {
         require(_to != address(0), "WRF: Cannot withdraw to zero address");
         uint256 balance = address(this).balance;
         require(_amount <= balance, "WRF: Insufficient native (ETH) balance");
-        (bool success, ) = _to.call{value: _amount}("");
+        (bool success,) = _to.call{value: _amount}("");
         require(success, "WRF: Native (ETH) transfer failed");
     }
 }

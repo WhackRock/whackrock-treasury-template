@@ -1,12 +1,16 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
+// © 2024 WhackRock Labs – All rights reserved.
+// WHACKROCK – AGENT‑MANAGED WEIGHTED VAULT
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "forge-std/console.sol";
 
 // Ensure this path matches your actual contract file name in the src directory
-import { WhackRockFund, IAerodromeRouter, IWETH } from "../src/WhackRockFundV5_ERC4626_Aerodrome_SubGEvents.sol";
+import {WhackRockFund} from "../src/WhackRockFundV5_ERC4626_Aerodrome_SubGEvents.sol";
+import {IAerodromeRouter} from "../src/interfaces/IRouter.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IWhackRockFund} from "../src/interfaces/IWhackRockFund.sol";
 
 // --- Mainnet Addresses (BASE MAINNET) ---
 address constant AERODROME_ROUTER_ADDRESS_BASE = 0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43;
@@ -43,19 +47,18 @@ contract WhackRockFundTest is Test {
             stable: whackRockFund.DEFAULT_POOL_STABILITY(),
             factory: defaultAerodromeFactory
         });
-        try aerodromeRouter.getAmountsOut(amount, routes) returns (uint[] memory amountsOut) {
+        try aerodromeRouter.getAmountsOut(amount, routes) returns (uint256[] memory amountsOut) {
             if (amountsOut.length > 0) return amountsOut[amountsOut.length - 1];
         } catch {}
         return 0;
     }
-
 
     function setUp() public {
         try aerodromeRouter.defaultFactory() returns (address factoryAddr) {
             defaultAerodromeFactory = factoryAddr;
         } catch Error(string memory reason) {
             emit log_named_string("Failed to get defaultFactory from Aerodrome Router in setUp", reason);
-            fail(); 
+            fail();
         }
 
         address[] memory initialAllowedTokens = new address[](3);
@@ -102,17 +105,23 @@ contract WhackRockFundTest is Test {
 
         IAerodromeRouter.Route[] memory routes = new IAerodromeRouter.Route[](1);
         routes[0] = IAerodromeRouter.Route({
-            from: USDC_BASE, to: WETH_ADDRESS_BASE, stable: false, factory: defaultAerodromeFactory
+            from: USDC_BASE,
+            to: WETH_ADDRESS_BASE,
+            stable: false,
+            factory: defaultAerodromeFactory
         });
 
-        try aerodromeRouter.getAmountsOut(amountIn, routes) returns (uint[] memory amountsOut) {
+        try aerodromeRouter.getAmountsOut(amountIn, routes) returns (uint256[] memory amountsOut) {
             assertTrue(amountsOut.length > 0, "Aerodrome getAmountsOut (USDC) should return values");
             assertTrue(amountsOut[amountsOut.length - 1] > 0, "Expected WETH out for USDC should be > 0");
             emit log_named_uint("WETH out for 100 USDC (via Aerodrome)", amountsOut[amountsOut.length - 1]);
         } catch Error(string memory reason) {
             emit log_named_string("Aerodrome getAmountsOut failed for USDC_BASE", reason);
-        } catch { emit log_string("Aerodrome getAmountsOut failed with low-level data for USDC_BASE"); }
+        } catch {
+            emit log_string("Aerodrome getAmountsOut failed with low-level data for USDC_BASE");
+        }
     }
+
     function testAgentCanTriggerRebalance_BasicFromWETH() public {
         require(defaultAerodromeFactory != address(0), "Aerodrome default factory not set in setUp");
         uint256 depositAmountWETH = 5 * 1e18; // 5 WETH
@@ -120,21 +129,32 @@ contract WhackRockFundTest is Test {
         vm.startPrank(TEST_DEPOSITOR);
         weth.approve(address(whackRockFund), depositAmountWETH);
 
-        uint256 shares = whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR); 
+        uint256 shares = whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR);
         vm.stopPrank();
 
         assertTrue(shares > 0, "Depositor should have received shares");
         uint256 navAfterDepositRebalance = whackRockFund.totalNAVInAccountingAsset();
-        assertTrue(navAfterDepositRebalance <= depositAmountWETH, "NAV after deposit & rebalance should be <= initial deposit (due to swap fees/slippage)");
-        assertTrue(weth.balanceOf(address(whackRockFund)) < depositAmountWETH, "WETH balance should decrease after initial rebalance");
-        assertTrue(tokenA_USDC.balanceOf(address(whackRockFund)) > 0, "USDC balance should increase after initial rebalance");
-        assertTrue(tokenB_CBETH.balanceOf(address(whackRockFund)) > 0, "CBETH balance should increase after initial rebalance");
-        assertTrue(tokenC_VIRTU.balanceOf(address(whackRockFund)) > 0, "VIRTU balance should increase after initial rebalance");
-
+        assertTrue(
+            navAfterDepositRebalance <= depositAmountWETH,
+            "NAV after deposit & rebalance should be <= initial deposit (due to swap fees/slippage)"
+        );
+        assertTrue(
+            weth.balanceOf(address(whackRockFund)) < depositAmountWETH,
+            "WETH balance should decrease after initial rebalance"
+        );
+        assertTrue(
+            tokenA_USDC.balanceOf(address(whackRockFund)) > 0, "USDC balance should increase after initial rebalance"
+        );
+        assertTrue(
+            tokenB_CBETH.balanceOf(address(whackRockFund)) > 0, "CBETH balance should increase after initial rebalance"
+        );
+        assertTrue(
+            tokenC_VIRTU.balanceOf(address(whackRockFund)) > 0, "VIRTU balance should increase after initial rebalance"
+        );
 
         uint256 navBeforeAgentRebalance = navAfterDepositRebalance;
         vm.startPrank(TEST_AGENT);
-        
+
         whackRockFund.triggerRebalance();
         vm.stopPrank();
 
@@ -145,9 +165,12 @@ contract WhackRockFundTest is Test {
         emit log_named_uint("NAV after agent's rebalance", navAfterAgentRebalance);
 
         // Verify weights are still met after agent's rebalance
-        uint256 usdcValueWETH_agent = _getValueInAccountingAsset(USDC_BASE, tokenA_USDC.balanceOf(address(whackRockFund)));
-        uint256 cbethValueWETH_agent = _getValueInAccountingAsset(CBETH_BASE, tokenB_CBETH.balanceOf(address(whackRockFund)));
-        uint256 virtuValueWETH_agent = _getValueInAccountingAsset(VIRTU_BASE, tokenC_VIRTU.balanceOf(address(whackRockFund)));
+        uint256 usdcValueWETH_agent =
+            _getValueInAccountingAsset(USDC_BASE, tokenA_USDC.balanceOf(address(whackRockFund)));
+        uint256 cbethValueWETH_agent =
+            _getValueInAccountingAsset(CBETH_BASE, tokenB_CBETH.balanceOf(address(whackRockFund)));
+        uint256 virtuValueWETH_agent =
+            _getValueInAccountingAsset(VIRTU_BASE, tokenC_VIRTU.balanceOf(address(whackRockFund)));
 
         uint256 targetUsdc_agent = (navAfterAgentRebalance * 4000) / 10000; // 40%
         uint256 targetCbeth_agent = (navAfterAgentRebalance * 4000) / 10000; // 40%
@@ -156,8 +179,11 @@ contract WhackRockFundTest is Test {
         assertApproxEqAbs(usdcValueWETH_agent, targetUsdc_agent, targetUsdc_agent / 50); // 5% tolerance
         assertApproxEqAbs(cbethValueWETH_agent, targetCbeth_agent, targetCbeth_agent / 50); // 5% tolerance
         assertApproxEqAbs(virtuValueWETH_agent, targetVirtu_agent, targetVirtu_agent / 50); // 5% tolerance
-        
-        assertTrue(weth.balanceOf(address(whackRockFund)) < depositAmountWETH / 2, "WETH balance should remain low after agent rebalance"); // Check it's not all WETH
+
+        assertTrue(
+            weth.balanceOf(address(whackRockFund)) < depositAmountWETH / 2,
+            "WETH balance should remain low after agent rebalance"
+        ); // Check it's not all WETH
     }
 
     function testRebalanceWithExistingAllowedTokens_OverweightSales() public {
@@ -176,11 +202,11 @@ contract WhackRockFundTest is Test {
         uint256 navBefore = whackRockFund.totalNAVInAccountingAsset();
 
         vm.startPrank(TEST_AGENT);
-        vm.expectEmit(false, false, false, false, address(whackRockFund)); 
-        emit WhackRockFund.FundTokenSwapped(USDC_BASE,0,WETH_ADDRESS_BASE,0);
+        vm.expectEmit(false, false, false, false, address(whackRockFund));
+        emit IWhackRockFund.FundTokenSwapped(USDC_BASE, 0, WETH_ADDRESS_BASE, 0);
         // It might also buy other tokens if WETH becomes overweight due to USDC sale
         vm.expectEmit(false, false, false, false, address(whackRockFund));
-        emit WhackRockFund.RebalanceCycleExecuted(0,0,0);
+        emit IWhackRockFund.RebalanceCycleExecuted(0, 0, 0);
 
         whackRockFund.triggerRebalance();
         vm.stopPrank();
@@ -209,7 +235,7 @@ contract WhackRockFundTest is Test {
         uint256 cbethToRemove = tokenB_CBETH.balanceOf(address(whackRockFund)) / 2;
         if (cbethToRemove > 0) {
             deal(CBETH_BASE, TEST_OWNER, cbethToRemove);
-            vm.prank(address(whackRockFund)); 
+            vm.prank(address(whackRockFund));
             tokenB_CBETH.transfer(TEST_OWNER, cbethToRemove);
 
             uint256 wethToCompensate = _getValueInAccountingAsset(CBETH_BASE, cbethToRemove);
@@ -222,10 +248,10 @@ contract WhackRockFundTest is Test {
 
         vm.startPrank(TEST_AGENT);
         vm.expectEmit(false, false, false, false, address(whackRockFund));
-        emit WhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,CBETH_BASE,0);
+        emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE, 0, CBETH_BASE, 0);
         // It might also adjust other tokens if WETH becomes underweight
         vm.expectEmit(false, false, false, false, address(whackRockFund));
-        emit WhackRockFund.RebalanceCycleExecuted(0,0,0);
+        emit IWhackRockFund.RebalanceCycleExecuted(0, 0, 0);
 
         whackRockFund.triggerRebalance();
         vm.stopPrank();
@@ -265,7 +291,7 @@ contract WhackRockFundTest is Test {
         uint256 navPerShare1 = shares1 > 0 ? (navAfterDeposit1 * 1e18) / shares1 : 0;
         uint256 navPerShare2 = totalSharesAfterDeposit2 > 0 ? (navAfterDeposit2 * 1e18) / totalSharesAfterDeposit2 : 0;
         if (shares1 > 0 && totalSharesAfterDeposit2 > 0) {
-            assertApproxEqAbs(navPerShare1, navPerShare2, navPerShare1 / 50); 
+            assertApproxEqAbs(navPerShare1, navPerShare2, navPerShare1 / 50);
         }
 
         uint256 d1_weth_before_withdraw = weth.balanceOf(TEST_DEPOSITOR);
@@ -275,7 +301,10 @@ contract WhackRockFundTest is Test {
             vm.startPrank(TEST_DEPOSITOR);
             whackRockFund.withdraw(sharesToWithdraw1, TEST_DEPOSITOR, TEST_DEPOSITOR);
             vm.stopPrank();
-            assertTrue(weth.balanceOf(TEST_DEPOSITOR) > d1_weth_before_withdraw || tokenA_USDC.balanceOf(TEST_DEPOSITOR) > d1_usdc_before_withdraw);
+            assertTrue(
+                weth.balanceOf(TEST_DEPOSITOR) > d1_weth_before_withdraw
+                    || tokenA_USDC.balanceOf(TEST_DEPOSITOR) > d1_usdc_before_withdraw
+            );
         }
 
         uint256 d2_weth_before_withdraw = weth.balanceOf(TEST_DEPOSITOR_2);
@@ -285,7 +314,10 @@ contract WhackRockFundTest is Test {
             vm.startPrank(TEST_DEPOSITOR_2);
             whackRockFund.withdraw(sharesToWithdraw2, TEST_DEPOSITOR_2, TEST_DEPOSITOR_2);
             vm.stopPrank();
-            assertTrue(weth.balanceOf(TEST_DEPOSITOR_2) > d2_weth_before_withdraw || tokenA_USDC.balanceOf(TEST_DEPOSITOR_2) > d2_usdc_before_withdraw);
+            assertTrue(
+                weth.balanceOf(TEST_DEPOSITOR_2) > d2_weth_before_withdraw
+                    || tokenA_USDC.balanceOf(TEST_DEPOSITOR_2) > d2_usdc_before_withdraw
+            );
         }
         emit log("Multiple deposits and withdrawals test completed (basket withdrawal).");
     }
@@ -305,22 +337,22 @@ contract WhackRockFundTest is Test {
 
         vm.startPrank(TEST_AGENT);
         vm.expectEmit(false, false, false, false, address(whackRockFund));
-        emit WhackRockFund.TargetWeightsUpdated(new address[](0), new uint256[](0));
+        emit IWhackRockFund.TargetWeightsUpdated(new address[](0), new uint256[](0));
         whackRockFund.setTargetWeights(newWeights);
 
         // Expect swaps based on trace: USDC->WETH, WETH->CBETH, WETH->VIRTU
-        vm.expectEmit(false, false, false, false, address(whackRockFund)); 
-        emit WhackRockFund.FundTokenSwapped(USDC_BASE,0,WETH_ADDRESS_BASE,0); 
-        
-        vm.expectEmit(false, false, false, false, address(whackRockFund)); 
-        emit WhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,CBETH_BASE,0); 
-
-        vm.expectEmit(false, false, false, false, address(whackRockFund)); 
-        emit WhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,VIRTU_BASE,0);
-        
         vm.expectEmit(false, false, false, false, address(whackRockFund));
-        emit WhackRockFund.RebalanceCycleExecuted(0,0,0);
-        
+        emit IWhackRockFund.FundTokenSwapped(USDC_BASE, 0, WETH_ADDRESS_BASE, 0);
+
+        vm.expectEmit(false, false, false, false, address(whackRockFund));
+        emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE, 0, CBETH_BASE, 0);
+
+        vm.expectEmit(false, false, false, false, address(whackRockFund));
+        emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE, 0, VIRTU_BASE, 0);
+
+        vm.expectEmit(false, false, false, false, address(whackRockFund));
+        emit IWhackRockFund.RebalanceCycleExecuted(0, 0, 0);
+
         whackRockFund.triggerRebalance();
         vm.stopPrank();
 
@@ -333,9 +365,9 @@ contract WhackRockFundTest is Test {
         uint256 targetCbethNew = (navAfterNewRebalance * 6000) / 10000;
         uint256 targetVirtuNew = (navAfterNewRebalance * 2000) / 10000;
 
-        assertApproxEqAbs(usdcValueWETH, targetUsdcNew, targetUsdcNew / 10); 
-        assertApproxEqAbs(cbethValueWETH, targetCbethNew, targetCbethNew / 10); 
-        assertApproxEqAbs(virtuValueWETH, targetVirtuNew, targetVirtuNew / 10); 
+        assertApproxEqAbs(usdcValueWETH, targetUsdcNew, targetUsdcNew / 10);
+        assertApproxEqAbs(cbethValueWETH, targetCbethNew, targetCbethNew / 10);
+        assertApproxEqAbs(virtuValueWETH, targetVirtuNew, targetVirtuNew / 10);
     }
 
     function testSlippageScenarios_RevertsOrAccepts() public {
@@ -343,7 +375,7 @@ contract WhackRockFundTest is Test {
         uint256 depositAmountWETH = 2 * 1e18;
         vm.startPrank(TEST_DEPOSITOR);
         weth.approve(address(whackRockFund), depositAmountWETH);
-        whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR); 
+        whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR);
         vm.stopPrank();
         assertTrue(true, "Deposit and initial rebalance completed with default slippage settings.");
     }
@@ -353,9 +385,11 @@ contract WhackRockFundTest is Test {
         uint256 depositAmountWETH = 5 * 1e18;
         vm.startPrank(TEST_DEPOSITOR);
         weth.approve(address(whackRockFund), depositAmountWETH);
-        whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR); 
+        whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR);
         vm.stopPrank();
-        assertTrue(tokenC_VIRTU.balanceOf(address(whackRockFund)) > 0, "VIRTU balance should be > 0 after initial rebalance");
+        assertTrue(
+            tokenC_VIRTU.balanceOf(address(whackRockFund)) > 0, "VIRTU balance should be > 0 after initial rebalance"
+        );
     }
 
     function testRebalanceWhenAlreadyBalanced() public {
@@ -363,7 +397,7 @@ contract WhackRockFundTest is Test {
         uint256 depositAmountWETH = 10 * 1e18;
         vm.startPrank(TEST_DEPOSITOR);
         weth.approve(address(whackRockFund), depositAmountWETH);
-        whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR); 
+        whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR);
         vm.stopPrank();
 
         uint256 navBeforeSecondRebalance = whackRockFund.totalNAVInAccountingAsset();
@@ -371,19 +405,19 @@ contract WhackRockFundTest is Test {
         vm.startPrank(TEST_AGENT);
         // Based on trace, the unconditional _rebalance in triggerRebalance performs swaps.
         // Expecting the sequence from the trace: Sell USDC, Sell CBETH, Sell VIRTU, then RebalanceCycleExecuted.
-        vm.expectEmit(false, false, false, false, address(whackRockFund)); 
-        emit WhackRockFund.FundTokenSwapped(USDC_BASE,0,WETH_ADDRESS_BASE,0); 
-        vm.expectEmit(false, false, false, false, address(whackRockFund)); 
-        emit WhackRockFund.FundTokenSwapped(CBETH_BASE,0,WETH_ADDRESS_BASE,0);
-        vm.expectEmit(false, false, false, false, address(whackRockFund)); 
-        emit WhackRockFund.FundTokenSwapped(VIRTU_BASE,0,WETH_ADDRESS_BASE,0);
+        vm.expectEmit(false, false, false, false, address(whackRockFund));
+        emit IWhackRockFund.FundTokenSwapped(USDC_BASE, 0, WETH_ADDRESS_BASE, 0);
+        vm.expectEmit(false, false, false, false, address(whackRockFund));
+        emit IWhackRockFund.FundTokenSwapped(CBETH_BASE, 0, WETH_ADDRESS_BASE, 0);
+        vm.expectEmit(false, false, false, false, address(whackRockFund));
+        emit IWhackRockFund.FundTokenSwapped(VIRTU_BASE, 0, WETH_ADDRESS_BASE, 0);
         // It's possible it then buys them back if the "sell all" strategy overshoots.
         // For now, let's match the primary sell-off from the trace.
         // If it buys them back, more FundTokenSwapped events would occur here.
 
-        vm.expectEmit(false, false, false, false, address(whackRockFund)); 
-        emit WhackRockFund.RebalanceCycleExecuted(0,0,0);
-        whackRockFund.triggerRebalance(); 
+        vm.expectEmit(false, false, false, false, address(whackRockFund));
+        emit IWhackRockFund.RebalanceCycleExecuted(0, 0, 0);
+        whackRockFund.triggerRebalance();
         vm.stopPrank();
 
         uint256 navAfterSecondRebalance = whackRockFund.totalNAVInAccountingAsset();
@@ -408,7 +442,7 @@ contract WhackRockFundTest is Test {
         uint256 targetVirtu = (navAfterSecondRebalance * 2000) / 10000;
 
         assertApproxEqAbs(usdcValueWETH, targetUsdc, targetUsdc / 20); // 5% tolerance
-        assertApproxEqAbs(cbethValueWETH, targetCbeth, targetCbeth / 20); 
+        assertApproxEqAbs(cbethValueWETH, targetCbeth, targetCbeth / 20);
         assertApproxEqAbs(virtuValueWETH, targetVirtu, targetVirtu / 20);
     }
 
@@ -419,7 +453,7 @@ contract WhackRockFundTest is Test {
         uint256 ownerBalanceBefore = tokenA_USDC.balanceOf(TEST_OWNER);
         vm.startPrank(TEST_OWNER);
         vm.expectEmit(true, true, false, true, address(whackRockFund));
-        emit WhackRockFund.EmergencyWithdrawal(USDC_BASE, amountToSteal);
+        emit IWhackRockFund.EmergencyWithdrawal(USDC_BASE, amountToSteal);
         whackRockFund.emergencyWithdrawERC20(USDC_BASE, TEST_OWNER, amountToSteal);
         vm.stopPrank();
 
@@ -435,14 +469,14 @@ contract WhackRockFundTest is Test {
         uint256 ownerBalanceBefore = nonAllowed.balanceOf(TEST_OWNER);
         vm.startPrank(TEST_OWNER);
         vm.expectEmit(true, true, false, true, address(whackRockFund));
-        emit WhackRockFund.EmergencyWithdrawal(NON_ALLOWED_TOKEN_EXAMPLE, amountToSteal);
+        emit IWhackRockFund.EmergencyWithdrawal(NON_ALLOWED_TOKEN_EXAMPLE, amountToSteal);
         whackRockFund.emergencyWithdrawERC20(NON_ALLOWED_TOKEN_EXAMPLE, TEST_OWNER, amountToSteal);
         vm.stopPrank();
 
         assertEq(nonAllowed.balanceOf(TEST_OWNER), ownerBalanceBefore + amountToSteal);
         assertEq(nonAllowed.balanceOf(address(whackRockFund)), amountToSteal);
     }
-    
+
     // testEmergencyWithdrawNative was commented out by user, keeping it commented.
     // function testEmergencyWithdrawNative() public { ... }
 }
