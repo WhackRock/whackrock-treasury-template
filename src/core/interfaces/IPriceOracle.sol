@@ -1,4 +1,5 @@
-// SPDX‑License‑Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (C) 2024 WhackRock Labs. All rights reserved.
 pragma solidity ^0.8.20;
 
 /**
@@ -7,6 +8,6 @@ pragma solidity ^0.8.20;
  */
 interface IPriceOracle {
     /// @param token ERC‑20 address
-    /// @return priceUsd1e18  USD price * 1e18
+    /// @return priceUsd1e18  USD price * 1e18
     function usdPrice(address token) external view returns (uint256 priceUsd1e18);
 }

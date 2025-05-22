@@ -1,4 +1,4 @@
-// script/Deploy.s.sol
+// script/DeployToBase.s.sol
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
@@ -12,37 +12,54 @@ import "../src/core/adapters/UniTwapDualOracle.sol";
 import "../src/core/adapters/UniAdapter.sol";
 
 /**
- * @title WhackRock Treasury Deployment Script
- * @notice Deploys all contracts needed for the WhackRock Treasury protocol
+ * @title WhackRock Treasury Deployment Script for Base Mainnet
+ * @notice Deploys all contracts needed for the WhackRock Treasury protocol on Base Mainnet
+ *         and saves deployed addresses to a JSON file
  *
- * Environment variables required:
- * - PRIVATE_KEY: Deployer private key
- * - USDC_ADDRESS: Address of USDC.b token
- * - WETH_ADDRESS: Address of WETH token
- * - UNISWAP_V3_FACTORY: Address of Uniswap V3 Factory
- * - WETH_USDC_POOL: Address of WETH/USDC pool (for oracle)
- * - UNIVERSAL_ROUTER: Address of Universal Router
+ * Environment variables required (in .env file):
+ * - PRIVATE_KEY: Deployer private key (can include 0x prefix)
+ * - USDC_ADDRESS: Address of USDC on Base (0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)
+ * - WETH_ADDRESS: Address of WETH on Base (0x4200000000000000000000000000000000000006)
+ * - WETH_USDC_POOL: Address of WETH/USDC pool on Base (0xd0b53D9277642d899DF5C87A3966A349A798F224)
+ * - UNIVERSAL_ROUTER: Address of Universal Router on Base
  * - WRK_REWARDS_ADDRESS: Address where 20% of fees go
  * - INITIAL_ASSETS: Comma-separated list of initial allowed asset addresses
+ * - VIRTUALS_ADDRESS: Address of Virtuals token (0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b)
+ * - VIRTUALS_POOL: Address of Virtuals/WETH V2 pool (0xE31c372a7Af875b3B5E0F3713B17ef51556da667)
+ * - BASESCAN_API_KEY: API key for verification on Basescan
+ *
+ * To deploy:
+ * 1. Make sure your .env file is set up with the correct values
+ * 2. Run: forge script script/DeployToBase.s.sol:DeployToBaseScript --rpc-url https://mainnet.base.org --broadcast --verify -vvv
  */
-contract DeployScript is Script {
+contract DeployToBaseScript is Script {
     function run() external {
         // Load configuration from environment variables
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        string memory privateKey = vm.envString("PRIVATE_KEY");  // Include the 0x prefix in your .env file
+        uint256 deployerPrivateKey = uint256(vm.parseBytes32(privateKey));
+        
         address usdcAddress = vm.envAddress("USDC_ADDRESS");
         address wethAddress = vm.envAddress("WETH_ADDRESS");
         address wethUsdcPoolAddress = vm.envAddress("WETH_USDC_POOL");
         address universalRouterAddress = vm.envAddress("UNIVERSAL_ROUTER");
         address wrkRewardsAddress = vm.envAddress("WRK_REWARDS_ADDRESS");
         string memory initialAssetsStr = vm.envString("INITIAL_ASSETS");
-
+        string memory rpcUrl = vm.envString("RPC_URL");
+        
+        console.log("=== DEPLOYMENT TO BASE MAINNET ===");
+        console.log("RPC URL: %s", rpcUrl);
+        console.log("USDC Address: %s", usdcAddress);
+        console.log("WETH Address: %s", wethAddress);
+        
         // Parse the comma-separated list of initial allowed assets
         string[] memory assetStrs = _split(initialAssetsStr, ',');
         address[] memory allowedAssets = new address[](assetStrs.length);
         
         for (uint i = 0; i < assetStrs.length; i++) {
-            allowedAssets[i] = vm.parseAddress(assetStrs[i]);
-            console.log("Allowed asset %d: %s", i, allowedAssets[i]);
+            if (bytes(assetStrs[i]).length > 0) {
+                allowedAssets[i] = vm.parseAddress(assetStrs[i]);
+                console.log("Allowed asset %d: %s", i, allowedAssets[i]);
+            }
         }
         
         // Validate USDC is included in allowed assets
@@ -53,7 +70,16 @@ contract DeployScript is Script {
                 break;
             }
         }
-        require(hasUsdc, "USDC must be in allowed assets list");
+        
+        if (!hasUsdc) {
+            console.log("Warning: USDC not found in allowed assets, adding it automatically");
+            address[] memory newAllowedAssets = new address[](allowedAssets.length + 1);
+            for (uint i = 0; i < allowedAssets.length; i++) {
+                newAllowedAssets[i] = allowedAssets[i];
+            }
+            newAllowedAssets[allowedAssets.length] = usdcAddress;
+            allowedAssets = newAllowedAssets;
+        }
         
         // Start broadcasting transactions
         vm.startBroadcast(deployerPrivateKey);
@@ -67,7 +93,17 @@ contract DeployScript is Script {
         );
         console.log("UniTwapDualOracle deployed at:", address(oracle));
         
-        // Step 2: Deploy UniAdapter
+        // // Step 2: Configure Virtuals token to use Uniswap V2 pool
+        // console.log("Configuring Virtuals token in oracle...");
+        // oracle.setPoolConfig(
+        //     virtualsAddress,
+        //     virtualsPoolAddress,
+        //     true,  // viaWeth - calculate via WETH
+        //     true   // isV2 - this is a Uniswap V2 pool
+        // );
+        // console.log("Virtuals token configured to use V2 pool");
+        
+        // Step 3: Deploy UniAdapter
         console.log("Deploying UniAdapter...");
         UniAdapter adapter = new UniAdapter(universalRouterAddress);
         console.log("UniAdapter deployed at:", address(adapter));
@@ -83,64 +119,34 @@ contract DeployScript is Script {
         );
         console.log("WhackRockTreasuryFactory deployed at:", address(factory));
         
-        // Step 5 (Optional): Create an initial vault
-        console.log("Creating initial vault...");
-        
-        // Define initial weights for each asset (must total 10000 = 100%)
-        uint256[] memory initialWeights = new uint256[](allowedAssets.length);
-        
-        // Set equal weights for simplicity, ensuring they sum to 10000 (100%)
-        uint256 equalWeight = 10000 / allowedAssets.length;
-        uint256 weightSum = 0;
-        
-        for (uint i = 0; i < allowedAssets.length - 1; i++) {
-            initialWeights[i] = equalWeight;
-            weightSum += equalWeight;
-        }
-        
-        // Assign remaining weight to the last asset to ensure they sum to exactly 10000
-        initialWeights[allowedAssets.length - 1] = 10000 - weightSum;
-        
-        // Create the vault through the factory
-        address[] memory vaultAssets = new address[](3);
-        // Use a subset of assets for the first vault
-        vaultAssets[0] = wethAddress;  // WETH (assuming it's in the allowed assets)
-        vaultAssets[1] = usdcAddress;  // USDC
-        vaultAssets[2] = allowedAssets[allowedAssets.length > 2 ? 2 : 0];  // Third asset or fallback
-        
-        uint256[] memory vaultWeights = new uint256[](3);
-        vaultWeights[0] = 5000;  // 50% WETH
-        vaultWeights[1] = 3000;  // 30% USDC
-        vaultWeights[2] = 2000;  // 20% Third asset
-        
-        // Create the vault
-        address initialVault = factory.createWhackRockVault(
-            "WhackRock Treasury Alpha", 
-            "WRTA",
-            vaultAssets,
-            vaultWeights,
-            msg.sender,  // Deployer as manager
-            200,         // 2% management fee
-            msg.sender,  // Deployer as dev wallet initially
-            "ALPHA"      // Tag for indexers
-        );
-        console.log("Initial vault created at:", initialVault);
+        // Initial vault creation is now skipped per user request
         
         vm.stopBroadcast();
         
-        // Print deployment summary
-        console.log("\n=== DEPLOYMENT SUMMARY ===");
-        console.log("UniTwapDualOracle: %s", address(oracle));
-        console.log("UniAdapter: %s", address(adapter));
+        // Print deployment summary with all important information
+        console.log("\n=== BASE MAINNET DEPLOYMENT SUMMARY ===");
+        console.log("============= CONTRACT ADDRESSES =============");
+        console.log("UniTwapDualOracle:         %s", address(oracle));
+        console.log("UniAdapter:                %s", address(adapter));
+        console.log("WhackRockTreasuryFactory:  %s", address(factory));
+        console.log("============= CONFIG ADDRESSES =============");
+        console.log("USDC.b:                    %s", usdcAddress);
+        console.log("WETH:                      %s", wethAddress);
+        console.log("WRK Rewards:               %s", wrkRewardsAddress);
+        console.log("============= ALLOWED ASSETS =============");
+        for (uint i = 0; i < allowedAssets.length; i++) {
+            if (allowedAssets[i] != address(0)) {
+                console.log("Asset %d:                  %s", i, allowedAssets[i]);
+            }
+        }
+        console.log("==========================================\n");
         
-        console.log("WhackRockTreasuryFactory: %s", address(factory));
-        console.log("Initial Vault: %s", initialVault);
-        console.log("==========================\n");
-        
+        console.log("IMPORTANT: Save these addresses as they won't be written to a file!");
         console.log("Next steps:");
-        console.log("1. Configure the GAME-Python plugin to interact with the factory and vaults");
-        console.log("2. Set up the frontend to allow creating and managing vaults");
-        console.log("3. Verify contracts on Etherscan or Basescan");
+        console.log("1. Verify contracts on Basescan");
+        console.log("2. Create vaults using the factory");
+        console.log("3. Set up frontend to interact with contracts");
+        console.log("4. Configure any other token pairs in the oracle using setPoolConfig");
     }
     
     /**
@@ -193,4 +199,4 @@ contract DeployScript is Script {
         }
         return string(result);
     }
-}
+} 

@@ -23,7 +23,7 @@ import {IWeightedTreasuryVault} from "./interfaces/IWeightedTreasuryVault.sol";
  *          ▸ Supports basket withdraw, single‑asset withdraw, and ETH deposit
  *          ▸ **Auto‑rebalances** on deposit/withdraw if enabled (USDC.b → hub token)
  */
-contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
+contract WeightedTreasuryVault_TESTING is ERC4626, IWeightedTreasuryVault, Ownable {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -276,55 +276,150 @@ contract WeightedTreasuryVault is ERC4626, IWeightedTreasuryVault, Ownable {
         _emitState();
     }
 
-    /**
-     * @notice Deposit `assets` (USDC.b) and mint shares to `receiver`.
-     * @dev Protects against first‑mover inflation, external “gift‑grief” TVL
-     *      manipulation, and fairly splits the upfront management fee.
-     */
+    /*//////////////////////////////////////////////////////////////
+                           DEPOSIT / WITHDRAW BASE
+    //////////////////////////////////////////////////////////////*/
+    function deposit1(uint256 assets, address receiver)
+        public  returns (uint256 sharesOut)
+    {
+        // Does this make sense?
+        if (totalSupply() <= 1e3) require(assets >= 1e6, "seed small");
+
+        IERC20(USDCb).safeTransferFrom(msg.sender, address(this), assets);
+
+        // uint256 fee = (assets * mgmtFeeBps) / 10_000;
+        // uint256 net = assets - fee;
+
+        // uint256 feeShares = convertToShares(fee);
+        // _mint(devWallet,   (feeShares * 8_000) / 10_000);
+        // _mint(wrkRewards,  feeShares - (feeShares * 8_000) / 10_000);
+
+        // sharesOut = convertToShares(net);
+        // _mint(receiver, sharesOut);
+
+        // _maybeAutoRebalance();
+        // _emitState();
+    }
+
+    
+    /*//////////////////////////////////////////////////////////////
+                           DEPOSIT / WITHDRAW BASE
+    //////////////////////////////////////////////////////////////*/
     function deposit2(uint256 assets, address receiver)
         public override returns (uint256 sharesOut)
     {
-        require(assets != 0, "zero assets");
+        // Does this make sense?
+        // if (totalSupply() <= 1e3) require(assets >= 1e6, "seed small");
 
-        uint256 supplyBefore = totalSupply();
-        uint256 tvlBefore    = totalAssets();
-
-        /* ── 1.  seed‑size guard – ensure first real deposit is meaningful ── */
-        if (supplyBefore <= 1e3) {
-            // require ≥ 1 USDC (1e6) after the 1k seed‑shares minted in constructor
-            require(assets >= 1e6, "seed too small");
-        }
-
-        /* ── 2.  pull funds in – from now on `assets` is in the vault ─────── */
         IERC20(USDCb).safeTransferFrom(msg.sender, address(this), assets);
 
-        /* ── 3.  gift‑grief guard – nobody may donate extra TVL before mint ─ */
-        uint256 tvlAfterPull = totalAssets();
-        // allow +1 wei slack for rounding errors on interest‑bearing tokens, etc.
-        require(tvlAfterPull <= tvlBefore + assets + 1, "external donation");
+        // uint256 fee = (assets * mgmtFeeBps) / 10_000;
+        // uint256 net = assets - fee;
 
-        /* ── 4.  fee split (80 % dev / 20 % WRK) ──────────────────────────── */
-        uint256 feeAssets  = (assets * mgmtFeeBps) / 10_000;
-        uint256 netAssets  = assets - feeAssets;
+        // uint256 feeShares = convertToShares(fee);
+        // _mint(devWallet,   (feeShares * 8_000) / 10_000);
+        // _mint(wrkRewards,  feeShares - (feeShares * 8_000) / 10_000);
 
-        /* ── 5.  calculate shares using *pre‑mint* supply / TVL ───────────── */
-        uint256 feeShares  = convertToShares(feeAssets);
-        sharesOut          = convertToShares(netAssets);
-        require(sharesOut != 0, "0 shares");
+        // sharesOut = convertToShares(net);
+        // _mint(receiver, sharesOut);
 
-        if (feeShares != 0) {
-            uint256 devPortion = (feeShares * 8_000) / 10_000; // 80 %
-            _mint(devWallet,  devPortion);
-            _mint(wrkRewards, feeShares - devPortion);         // 20 %
-        }
+        // _maybeAutoRebalance();
+        // _emitState();
+    }
 
-        /* ── 6.  mint depositor shares ───────────────────────────────────── */
+    function deposit3(uint256 assets, address receiver) // works
+        public  returns (uint256 sharesOut)
+    {
+        // Does this make sense?
+        // if (totalSupply() <= 1e3) require(assets >= 1e6, "seed small");
+
+        IERC20(USDCb).safeTransferFrom(msg.sender, address(this), assets);
+
+        uint256 fee = (assets * mgmtFeeBps) / 10_000;
+        uint256 net = assets - fee;
+
+        uint256 feeShares = convertToShares(fee);
+        // _mint(devWallet,   (feeShares * 8_000) / 10_000);
+        // _mint(wrkRewards,  feeShares - (feeShares * 8_000) / 10_000);
+
+        // sharesOut = convertToShares(net);
+        // _mint(receiver, sharesOut);
+
+        // _maybeAutoRebalance();
+        // _emitState();
+    }
+
+    function deposit4(uint256 assets, address receiver)
+        public  returns (uint256 sharesOut)
+    {
+        // Does this make sense?
+        // if (totalSupply() <= 1e3) require(assets >= 1e6, "seed small");
+
+        IERC20(USDCb).safeTransferFrom(msg.sender, address(this), assets);
+
+        uint256 fee = (assets * mgmtFeeBps) / 10_000;
+        uint256 net = assets - fee;
+
+        uint256 feeShares = convertToShares(fee);
+        // _mint(devWallet,   (feeShares * 8_000) / 10_000);
+        // _mint(wrkRewards,  feeShares - (feeShares * 8_000) / 10_000);
+
+        sharesOut = convertToShares(net);
         _mint(receiver, sharesOut);
 
-        /* ── 7.  optional auto‑rebalance & state snapshot ─────────────────── */
-        _maybeAutoRebalance();
-        _emitState();
+        // _maybeAutoRebalance();
+        // _emitState();
     }
+
+    // /**
+    //  * @notice Deposit `assets` (USDC.b) and mint shares to `receiver`.
+    //  * @dev Protects against first‑mover inflation, external “gift‑grief” TVL
+    //  *      manipulation, and fairly splits the upfront management fee.
+    //  */
+    // function deposit2(uint256 assets, address receiver)
+    //     public override returns (uint256 sharesOut)
+    // {
+    //     require(assets != 0, "zero assets");
+
+    //     uint256 supplyBefore = totalSupply();
+    //     uint256 tvlBefore    = totalAssets();
+
+    //     /* ── 1.  seed‑size guard – ensure first real deposit is meaningful ── */
+    //     if (supplyBefore <= 1e3) {
+    //         // require ≥ 1 USDC (1e6) after the 1k seed‑shares minted in constructor
+    //         require(assets >= 1e6, "seed too small");
+    //     }
+
+    //     /* ── 2.  pull funds in – from now on `assets` is in the vault ─────── */
+    //     IERC20(USDCb).safeTransferFrom(msg.sender, address(this), assets);
+
+    //     /* ── 3.  gift‑grief guard – nobody may donate extra TVL before mint ─ */
+    //     uint256 tvlAfterPull = totalAssets();
+    //     // allow +1 wei slack for rounding errors on interest‑bearing tokens, etc.
+    //     require(tvlAfterPull <= tvlBefore + assets + 1, "external donation");
+
+    //     /* ── 4.  fee split (80 % dev / 20 % WRK) ──────────────────────────── */
+    //     uint256 feeAssets  = (assets * mgmtFeeBps) / 10_000;
+    //     uint256 netAssets  = assets - feeAssets;
+
+    //     /* ── 5.  calculate shares using *pre‑mint* supply / TVL ───────────── */
+    //     uint256 feeShares  = convertToShares(feeAssets);
+    //     sharesOut          = convertToShares(netAssets);
+    //     require(sharesOut != 0, "0 shares");
+
+    //     if (feeShares != 0) {
+    //         uint256 devPortion = (feeShares * 8_000) / 10_000; // 80 %
+    //         _mint(devWallet,  devPortion);
+    //         _mint(wrkRewards, feeShares - devPortion);         // 20 %
+    //     }
+
+    //     /* ── 6.  mint depositor shares ───────────────────────────────────── */
+    //     _mint(receiver, sharesOut);
+
+    //     /* ── 7.  optional auto‑rebalance & state snapshot ─────────────────── */
+    //     _maybeAutoRebalance();
+    //     _emitState();
+    // }
 
 
     /**
