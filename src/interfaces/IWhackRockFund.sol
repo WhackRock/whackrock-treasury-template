@@ -79,6 +79,8 @@ interface IWhackRockFund {
 
     function ACCOUNTING_ASSET() external view returns (address);
 
+    function USDC_ADDRESS() external view returns (address);
+
     // Getter for the entire allowedTokens array
     // function allowedTokens() external view returns (address[] memory);
 
@@ -94,6 +96,11 @@ interface IWhackRockFund {
     function SWAP_DEADLINE_OFFSET() external view returns (uint256);
     function DEFAULT_POOL_STABILITY() external view returns (bool);
     function REBALANCE_DEVIATION_THRESHOLD_BPS() external view returns (uint256);
+
+    // NAV related functions
+    function totalNAVInAccountingAsset() external view returns (uint256 totalManagedAssets);
+    
+    function totalNAVInUSDC() external view returns (uint256 totalManagedAssetsInUSDC);
 
     // --- Functions from WhackRockFund ---
     // function totalNAVInAccountingAsset() external view returns (uint256 totalManagedAssets);

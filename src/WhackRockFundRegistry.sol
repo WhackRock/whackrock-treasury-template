@@ -184,12 +184,10 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
             require(USDC_TOKEN.balanceOf(msg.sender) >= protocolFundCreationFeeUsdcAmount, "Registry: Insufficient USDC balance");
             USDC_TOKEN.safeTransferFrom(msg.sender, whackRockRewardsAddress, protocolFundCreationFeeUsdcAmount);
         }
-        
 
         // Deploy the fund
         // The WhackRockFund constructor signature must match this call.
         // The imported WhackRockFund is from "./WhackRockFundV5_ERC4626_Aerodrome_SubGEvents.sol"
-        // which was last updated to include AUM fee parameters and the bytes memory data.
         WhackRockFund newFund = new WhackRockFund(
             msg.sender, 
             _initialAgent,
@@ -201,7 +199,8 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
             _agentAumFeeWalletForFund,     
             _agentSetTotalAumFeeBps,       
             protocolAumFeeRecipientForFunds,
-            new bytes(0) // Pass empty bytes for the 'data' parameter
+            address(USDC_TOKEN),
+            new bytes(0) // Empty data parameter is still needed for constructor signature
         );
         fundAddress = address(newFund);
 

@@ -9,14 +9,6 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 import {IAerodromeRouter} from "./interfaces/IRouter.sol"; 
 import {IWhackRockFund} from "./interfaces/IWhackRockFund.sol"; 
 
-/**
- * @title IWETH (if not implicitly part of IRouter.sol from user's import)
- * @dev Minimal interface for WETH (Wrapped Ether).
- */
-interface IWETH is IERC20 {
-    function deposit() external payable;
-    function withdraw(uint256 wad) external;
-}
 
 // Note: The IAerodromeRouter interface definition would ideally be fully present
 // if not correctly imported and resolved by the compiler from "./interfaces/IRouter.sol".
@@ -43,6 +35,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     address public agent;
     IAerodromeRouter public immutable dexRouter;
     address public immutable ACCOUNTING_ASSET; // WETH
+    address public immutable USDC_ADDRESS; // USDC token address
 
     address[] public allowedTokens;
     mapping(address => uint256) public targetWeights;
@@ -79,17 +72,22 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         string memory _vaultSymbol,
         address _agentAumFeeWallet,
         uint256 _totalAgentAumFeeBpsRate,
-        address _protocolAumFeeRecipientAddress, // Renamed for clarity
-        bytes memory /* data */ // Unused for now
+        address _protocolAumFeeRecipientAddress,
+        address _usdcAddress,
+        bytes memory /* data */ // Unused again
     ) ERC20(_vaultName, _vaultSymbol) Ownable(_initialOwner) {
         require(_initialAgent != address(0), "WRF: Initial agent cannot be zero address");
         require(_dexRouterAddress != address(0), "WRF: DEX router cannot be zero address");
         require(_agentAumFeeWallet != address(0), "WRF: Agent AUM fee wallet cannot be zero");
         require(_protocolAumFeeRecipientAddress != address(0), "WRF: Protocol AUM fee recipient cannot be zero");
+        require(_usdcAddress != address(0), "WRF: USDC address cannot be zero");
 
         IAerodromeRouter tempRouter = IAerodromeRouter(_dexRouterAddress);
         ACCOUNTING_ASSET = address(tempRouter.weth());
         require(ACCOUNTING_ASSET != address(0), "WRF: Accounting asset (WETH) not found");
+        
+        // Use directly provided USDC address
+        USDC_ADDRESS = _usdcAddress;
 
         require(_initialAllowedTokens.length > 0, "WRF: No allowed tokens provided");
         require(
@@ -119,6 +117,9 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         }
         require(currentTotalWeight == TOTAL_WEIGHT_BASIS_POINTS, "WRF: Initial weights do not sum to total");
         _approveTokenIfNeeded(IERC20(ACCOUNTING_ASSET), address(dexRouter), type(uint256).max);
+        
+        // Approve USDC for router if needed
+        _approveTokenIfNeeded(IERC20(USDC_ADDRESS), address(dexRouter), type(uint256).max);
 
         emit AgentUpdated(address(0), _initialAgent);
         emit TargetWeightsUpdated(msg.sender, _initialAllowedTokens, _initialTargetWeights, block.timestamp); // Added agent and timestamp
@@ -135,6 +136,44 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         }
         totalManagedAssets += IERC20(ACCOUNTING_ASSET).balanceOf(address(this));
         return totalManagedAssets;
+    }
+    
+    function totalNAVInUSDC() public view returns (uint256 totalManagedAssetsInUSDC) {
+        uint256 navInWETH = totalNAVInAccountingAsset();
+        if (navInWETH == 0) return 0;
+        
+        // Convert WETH value to USDC value using DEX router
+        uint256 usdcValue = _getWETHValueInUSDC(navInWETH);
+        
+        // If we couldn't get USDC value (e.g. no liquidity), return 0
+        if (usdcValue == 0) {
+            return 0;
+        }
+        
+        return usdcValue;
+    }
+    
+    function _getWETHValueInUSDC(uint256 _wethAmount) internal view returns (uint256) {
+        if (_wethAmount == 0) return 0;
+        
+        // Check if we can get a direct quote from WETH to USDC
+        IAerodromeRouter.Route[] memory routes = new IAerodromeRouter.Route[](1);
+        routes[0] = IAerodromeRouter.Route({
+            from: ACCOUNTING_ASSET,
+            to: USDC_ADDRESS,
+            stable: DEFAULT_POOL_STABILITY,
+            factory: dexRouter.defaultFactory()
+        });
+        
+        try dexRouter.getAmountsOut(_wethAmount, routes) returns (uint256[] memory amounts) {
+            if (amounts.length > 0 && amounts[amounts.length - 1] > 0) {
+                return amounts[amounts.length - 1];
+            }
+        } catch {
+            revert("WRF: Failed to get WETH to USDC quote");
+        }
+        
+        return 0;
     }
 
     function _isRebalanceNeeded() internal view returns (bool needsRebalance, uint256 maxDeviationBPS) {
