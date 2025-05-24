@@ -12,32 +12,60 @@ import {IAerodromeRouter} from "./IRouter.sol"; // Defines IAerodromeRouter
  */
 interface IWhackRockFund {
     // --- Events from WhackRockFund ---
+ // --- Events ---
     event AgentUpdated(address indexed oldAgent, address indexed newAgent);
-    event TargetWeightsUpdated(address[] tokens, uint256[] weights);
-    event RebalanceCheck(bool needed, uint256 maxDeviationBPS);
-    event RebalanceCycleExecuted(uint256 navBeforeRebalanceAA, uint256 navAfterRebalanceAA, uint256 blockTimestamp);
-    event FundTokenSwapped(address indexed tokenFrom, uint256 amountFrom, address indexed tokenTo, uint256 amountTo);
+    event TargetWeightsUpdated(
+        address indexed agent, // Added agent
+        address[] tokens,
+        uint256[] weights,
+        uint256 timestamp // Added timestamp
+    );
+    event RebalanceCheck(
+        bool needsRebalance, 
+        uint256 maxDeviationBPS, 
+        uint256 currentNAV_AA // Added current NAV for context
+    );
+    event RebalanceCycleExecuted(
+        uint256 navBeforeRebalanceAA,
+        uint256 navAfterRebalanceAA,
+        uint256 blockTimestamp
+    );
+    event FundTokenSwapped(
+        address indexed tokenFrom, 
+        uint256 amountFrom, 
+        address indexed tokenTo, 
+        uint256 amountTo
+    );
     event EmergencyWithdrawal(address indexed token, uint256 amount);
+    
     event WETHDepositedAndSharesMinted(
-        address indexed depositor, address indexed receiver, uint256 wethDeposited, uint256 sharesMinted
+        address indexed depositor,
+        address indexed receiver,
+        uint256 wethDeposited,
+        uint256 sharesMinted,
+        uint256 navBeforeDepositWETH, // Added
+        uint256 totalSupplyBeforeDeposit // Added
     );
     event BasketAssetsWithdrawn(
         address indexed owner,
         address indexed receiver,
         uint256 sharesBurned,
         address[] tokensWithdrawn,
-        uint256[] amountsWithdrawn
+        uint256[] amountsWithdrawn,
+        uint256 navBeforeWithdrawalWETH, // Added
+        uint256 totalSupplyBeforeWithdrawal, // Added
+        uint256 totalWETHValueOfWithdrawal // Added
     );
-
-    event AgentAumFeeCollected( // Updated event for AUM fee collection
+    event AgentAumFeeCollected(
         address indexed agentFeeWallet,
         uint256 agentSharesMinted,
         address indexed protocolFeeRecipient,
         uint256 protocolSharesMinted,
         uint256 totalFeeValueInAccountingAsset,
+        uint256 navAtFeeCalculation, // Added
+        uint256 totalSharesAtFeeCalculation, // Added
         uint256 timestamp
     );
-
 
     // --- Event from Ownable ---
     // event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);

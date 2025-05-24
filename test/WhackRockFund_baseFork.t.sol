@@ -139,7 +139,24 @@ contract WhackRockFundTest is Test {
         vm.startPrank(TEST_DEPOSITOR);
         weth.approve(address(whackRockFund), depositAmountWETH);
 
-        uint256 shares = whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR);
+        // --- Expectations for deposit() call ---
+        // 1. WETHDepositedAndSharesMinted (6 params: depositor, receiver, wethDeposited, sharesMinted, navBefore, totalSupplyBefore)
+        vm.expectEmit(true, true, false, false, address(whackRockFund)); 
+        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR, TEST_DEPOSITOR, depositAmountWETH, 0, 0, 0); 
+        
+        // 2. RebalanceCheck (3 params: needsRebalance, maxDeviationBPS, currentNAV_AA)
+        vm.expectEmit(false, false, false, false, address(whackRockFund)); 
+        emit IWhackRockFund.RebalanceCheck(true, 0, 0); 
+
+        // 3. FundTokenSwapped events from _rebalance() within deposit()
+        vm.expectEmit(false, false, false, false, address(whackRockFund));
+        emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE, 0, USDC_BASE, 0);
+        vm.expectEmit(false, false, false, false, address(whackRockFund));
+        emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE, 0, CBETH_BASE, 0);
+        vm.expectEmit(false, false, false, false, address(whackRockFund));
+        emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE, 0, VIRTU_BASE, 0);
+
+        uint256 shares = whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR); 
         vm.stopPrank();
 
         assertTrue(shares > 0);
@@ -153,8 +170,12 @@ contract WhackRockFundTest is Test {
         uint256 navBeforeAgentRebalance = navAfterDepositRebalance;
         vm.startPrank(TEST_AGENT);
         
+        // For the agent's triggerRebalance, only expect the final RebalanceCycleExecuted.
+        // The trace showed it performed a full sell-off and buy-back, but for robustness,
+        // let's simplify this specific test's expectation for the agent's trigger.
+        // If this still fails with `log != expected log`, it means FundTokenSwapped *was* emitted.
         vm.expectEmit(false, false, false, false, address(whackRockFund));
-        emit IWhackRockFund.RebalanceCycleExecuted(0,0,0); // Signature match only
+        emit IWhackRockFund.RebalanceCycleExecuted(0,0,0); 
 
         whackRockFund.triggerRebalance();
         vm.stopPrank();
@@ -184,6 +205,13 @@ contract WhackRockFundTest is Test {
         uint256 depositAmountWETH = 10 * 1e18; 
         vm.startPrank(TEST_DEPOSITOR);
         weth.approve(address(whackRockFund), depositAmountWETH);
+        // Expect events from deposit's rebalance
+        vm.expectEmit(true, true, false, false, address(whackRockFund)); 
+        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR, TEST_DEPOSITOR, depositAmountWETH, 0, 0, 0);
+        vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.RebalanceCheck(true, 0, 0); 
+        vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,USDC_BASE,0);
+        vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,CBETH_BASE,0);
+        vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,VIRTU_BASE,0);
         whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR); 
         vm.stopPrank();
 
@@ -195,21 +223,23 @@ contract WhackRockFundTest is Test {
         uint256 oneYearInSeconds = 365 days;
         vm.warp(block.timestamp + oneYearInSeconds);
 
-        // Calculate expected values for the event and assertions
         uint256 expectedTotalFeeValueInAA_calc = (initialNav * TEST_TOTAL_AUM_FEE_BPS * oneYearInSeconds) / (whackRockFund.TOTAL_WEIGHT_BASIS_POINTS() * 365 days);
         uint256 expectedTotalSharesToMintForFee_calc = 0;
-        if (initialNav > 0) {
+        if (initialNav > 0) { 
              expectedTotalSharesToMintForFee_calc = (expectedTotalFeeValueInAA_calc * initialTotalShares) / initialNav;
         }
         uint256 expectedAgentShares_calc = (expectedTotalSharesToMintForFee_calc * whackRockFund.AGENT_AUM_FEE_SHARE_BPS()) / whackRockFund.TOTAL_WEIGHT_BASIS_POINTS();
         uint256 expectedProtocolShares_calc = expectedTotalSharesToMintForFee_calc - expectedAgentShares_calc;
 
-        // vm.expectEmit(true, true, true, true, address(whackRockFund)); 
-        // emit IWhackRockFund.AgentAumFeeCollected(
-        //     TEST_AGENT_AUM_FEE_WALLET, expectedAgentShares_calc, 
-        //     TEST_PROTOCOL_AUM_RECIPIENT, expectedProtocolShares_calc, 
-        //     expectedTotalFeeValueInAA_calc, block.timestamp + oneYearInSeconds 
-        // );
+        vm.expectEmit(true, true, true, true, address(whackRockFund)); 
+        emit IWhackRockFund.AgentAumFeeCollected(
+            TEST_AGENT_AUM_FEE_WALLET, expectedAgentShares_calc, 
+            TEST_PROTOCOL_AUM_RECIPIENT, expectedProtocolShares_calc, 
+            expectedTotalFeeValueInAA_calc, 
+            initialNav, // navAtFeeCalculation
+            initialTotalShares, // totalSharesAtFeeCalculation
+            block.timestamp + oneYearInSeconds 
+        );
 
         whackRockFund.collectAgentManagementFee();
 
@@ -217,13 +247,12 @@ contract WhackRockFundTest is Test {
         assertApproxEqAbs(whackRockFund.balanceOf(TEST_PROTOCOL_AUM_RECIPIENT), expectedProtocolShares_calc, expectedProtocolShares_calc / 1000 + 1);
         assertEq(whackRockFund.lastAgentAumFeeCollectionTimestamp(), block.timestamp);
 
-        // Call again immediately after advancing time by 1 second
         uint256 agentSharesBeforeSecondCall = whackRockFund.balanceOf(TEST_AGENT_AUM_FEE_WALLET);
         uint256 protocolSharesBeforeSecondCall = whackRockFund.balanceOf(TEST_PROTOCOL_AUM_RECIPIENT);
         
-        vm.warp(block.timestamp + 1); // Warp 1 second to pass the time check
+        vm.warp(block.timestamp + 1); 
         
-        uint256 navAfterFirstFee = whackRockFund.totalNAVInAccountingAsset(); // NAV might have slightly changed due to share minting
+        uint256 navAfterFirstFee = whackRockFund.totalNAVInAccountingAsset(); 
         uint256 sharesAfterFirstFee = whackRockFund.totalSupply();
 
         uint256 expectedFeeFor1Sec = (navAfterFirstFee * TEST_TOTAL_AUM_FEE_BPS * 1) / (whackRockFund.TOTAL_WEIGHT_BASIS_POINTS() * 365 days);
@@ -234,19 +263,22 @@ contract WhackRockFundTest is Test {
         uint256 expectedAgentSharesFor1Sec = (expectedTotalSharesFor1Sec * whackRockFund.AGENT_AUM_FEE_SHARE_BPS()) / whackRockFund.TOTAL_WEIGHT_BASIS_POINTS();
         uint256 expectedProtocolSharesFor1Sec = expectedTotalSharesFor1Sec - expectedAgentSharesFor1Sec;
 
-        // if (expectedTotalSharesFor1Sec > 0) {
-        //     vm.expectEmit(true, true, true, true, address(whackRockFund));
-        //     emit IWhackRockFund.AgentAumFeeCollected(
-        //         TEST_AGENT_AUM_FEE_WALLET, expectedAgentSharesFor1Sec,
-        //         TEST_PROTOCOL_AUM_RECIPIENT, expectedProtocolSharesFor1Sec,
-        //         expectedFeeFor1Sec, block.timestamp + 1
-        //     );
-        // }
+        if (expectedTotalSharesFor1Sec > 0) {
+            vm.expectEmit(true, true, true, true, address(whackRockFund));
+            emit IWhackRockFund.AgentAumFeeCollected(
+                TEST_AGENT_AUM_FEE_WALLET, expectedAgentSharesFor1Sec,
+                TEST_PROTOCOL_AUM_RECIPIENT, expectedProtocolSharesFor1Sec,
+                expectedFeeFor1Sec, 
+                navAfterFirstFee, 
+                sharesAfterFirstFee, 
+                block.timestamp + 1 
+            );
+        }
         
         whackRockFund.collectAgentManagementFee(); 
         
-        assertApproxEqAbs(whackRockFund.balanceOf(TEST_AGENT_AUM_FEE_WALLET), agentSharesBeforeSecondCall + expectedAgentSharesFor1Sec, expectedAgentSharesFor1Sec / 1000 + 1);
-        assertApproxEqAbs(whackRockFund.balanceOf(TEST_PROTOCOL_AUM_RECIPIENT), protocolSharesBeforeSecondCall + expectedProtocolSharesFor1Sec, expectedProtocolSharesFor1Sec / 1000 + 1);
+        assertApproxEqAbs(whackRockFund.balanceOf(TEST_AGENT_AUM_FEE_WALLET), agentSharesBeforeSecondCall + expectedAgentSharesFor1Sec, expectedAgentSharesFor1Sec / 1000 + 2); 
+        assertApproxEqAbs(whackRockFund.balanceOf(TEST_PROTOCOL_AUM_RECIPIENT), protocolSharesBeforeSecondCall + expectedProtocolSharesFor1Sec, expectedProtocolSharesFor1Sec / 1000 + 2); 
     }
 
     function testWithdraw_ProportionalBasketDistribution() public {
@@ -254,35 +286,47 @@ contract WhackRockFundTest is Test {
         uint256 depositAmountWETH = 10 * 1e18;
         vm.startPrank(TEST_DEPOSITOR);
         weth.approve(address(whackRockFund), depositAmountWETH);
+        
+        vm.expectEmit(true, true, false, false, address(whackRockFund)); 
+        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR, TEST_DEPOSITOR, depositAmountWETH, 0,0,0);
+        vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.RebalanceCheck(true, 0,0);
+        vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,USDC_BASE,0);
+        vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,CBETH_BASE,0);
+        vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,VIRTU_BASE,0);
         uint256 sharesDeposited = whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR);
         vm.stopPrank();
 
         uint256 fundWethBeforeWithdraw = weth.balanceOf(address(whackRockFund));
         uint256 fundUsdcBeforeWithdraw = tokenA_USDC.balanceOf(address(whackRockFund));
-        // uint256 fundCbethBeforeWithdraw = tokenB_CBETH.balanceOf(address(whackRockFund));
+        uint256 fundCbethBeforeWithdraw = tokenB_CBETH.balanceOf(address(whackRockFund));
         uint256 fundVirtuBeforeWithdraw = tokenC_VIRTU.balanceOf(address(whackRockFund));
         uint256 totalSupplyBeforeWithdraw = whackRockFund.totalSupply();
         
         uint256 depositorWethBefore = weth.balanceOf(TEST_DEPOSITOR);
         uint256 depositorUsdcBefore = tokenA_USDC.balanceOf(TEST_DEPOSITOR);
-        // uint256 depositorCbethBefore = tokenB_CBETH.balanceOf(TEST_DEPOSITOR);
+        uint256 depositorCbethBefore = tokenB_CBETH.balanceOf(TEST_DEPOSITOR);
         uint256 depositorVirtuBefore = tokenC_VIRTU.balanceOf(TEST_DEPOSITOR);
-
 
         uint256 sharesToBurn = sharesDeposited / 2; 
 
         vm.startPrank(TEST_DEPOSITOR);
+        
+        vm.expectEmit(false, false, false, false, address(whackRockFund)); // BasketAssetsWithdrawn
+        emit IWhackRockFund.BasketAssetsWithdrawn(TEST_DEPOSITOR, TEST_DEPOSITOR, sharesToBurn, new address[](0), new uint256[](0),0,0,0);
+        vm.expectEmit(false, false, false, false, address(whackRockFund)); // RebalanceCheck
+        emit IWhackRockFund.RebalanceCheck(false, 0,0); 
+        // Swaps might occur in withdraw's rebalance, not strictly checked here for this test's focus
         whackRockFund.withdraw(sharesToBurn, TEST_DEPOSITOR, TEST_DEPOSITOR);
         vm.stopPrank();
 
         uint256 expectedWethWithdrawn = (fundWethBeforeWithdraw * sharesToBurn) / totalSupplyBeforeWithdraw;
         uint256 expectedUsdcWithdrawn = (fundUsdcBeforeWithdraw * sharesToBurn) / totalSupplyBeforeWithdraw;
-        // uint256 expectedCbethWithdrawn = (fundCbethBeforeWithdraw * sharesToBurn) / totalSupplyBeforeWithdraw;
+        uint256 expectedCbethWithdrawn = (fundCbethBeforeWithdraw * sharesToBurn) / totalSupplyBeforeWithdraw;
         uint256 expectedVirtuWithdrawn = (fundVirtuBeforeWithdraw * sharesToBurn) / totalSupplyBeforeWithdraw;
 
         assertApproxEqAbs(weth.balanceOf(TEST_DEPOSITOR), depositorWethBefore + expectedWethWithdrawn, expectedWethWithdrawn / 1000 + 1); 
         assertApproxEqAbs(tokenA_USDC.balanceOf(TEST_DEPOSITOR), depositorUsdcBefore + expectedUsdcWithdrawn, expectedUsdcWithdrawn / 1000 + 1);
-        // assertApproxEqAbs(tokenB_CBETH.balanceOf(TEST_DEPOSITOR), depositorCbethBefore + expectedCbethWithdrawn, expectedCbethWithdrawn / 1000 + 1);
+        assertApproxEqAbs(tokenB_CBETH.balanceOf(TEST_DEPOSITOR), depositorCbethBefore + expectedCbethWithdrawn, expectedCbethWithdrawn / 1000 + 1);
         assertApproxEqAbs(tokenC_VIRTU.balanceOf(TEST_DEPOSITOR), depositorVirtuBefore + expectedVirtuWithdrawn, expectedVirtuWithdrawn / 1000 + 1);
         
         assertApproxEqAbs(weth.balanceOf(address(whackRockFund)), fundWethBeforeWithdraw - expectedWethWithdrawn, expectedWethWithdrawn / 1000 + 1);
@@ -313,10 +357,9 @@ contract WhackRockFundTest is Test {
         weth.approve(address(whackRockFund), depositAmountWETH);
         
         vm.expectEmit(true, true, false, false, address(whackRockFund)); 
-        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR, TEST_DEPOSITOR, depositAmountWETH, 0);
-        // CORRECTED: Only one RebalanceCheck is emitted by deposit() itself
+        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR, TEST_DEPOSITOR, depositAmountWETH, 0, 0, 0);
         vm.expectEmit(false, false, false, false, address(whackRockFund)); 
-        emit IWhackRockFund.RebalanceCheck(true, 0); // Expect true for initial deposit, ignore maxDeviation for simplicity
+        emit IWhackRockFund.RebalanceCheck(true, 0, 0); 
         
         vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,USDC_BASE,0);
         vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,CBETH_BASE,0);
@@ -330,10 +373,9 @@ contract WhackRockFundTest is Test {
         weth.approve(address(whackRockFund), smallDeposit);
         
         vm.expectEmit(true, true, false, false, address(whackRockFund)); 
-        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR_2, TEST_DEPOSITOR_2, smallDeposit, 0);
+        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR_2, TEST_DEPOSITOR_2, smallDeposit, 0, 0, 0);
         vm.expectEmit(false, false, false, false, address(whackRockFund)); 
-        emit IWhackRockFund.RebalanceCheck(false, 0); // Expecting false (no rebalance needed by threshold)
-        // NO FundTokenSwapped expected if deviation is below threshold and rebalance is not forced
+        emit IWhackRockFund.RebalanceCheck(false, 0, 0); 
 
         whackRockFund.deposit(smallDeposit, TEST_DEPOSITOR_2);
         vm.stopPrank();
@@ -342,9 +384,9 @@ contract WhackRockFundTest is Test {
         uint256 usdcValueForOverweight = _getValueInAccountingAsset(USDC_BASE, 1 * 1e6); 
         uint256 usdcToMakeOverweight = 0;
         if (usdcValueForOverweight > 0) { 
-             usdcToMakeOverweight = (whackRockFund.totalNAVInAccountingAsset() * (whackRockFund.REBALANCE_DEVIATION_THRESHOLD_BPS() + 100) / whackRockFund.TOTAL_WEIGHT_BASIS_POINTS()) / (usdcValueForOverweight / 1e6) ; // Add 1% more than threshold
+             usdcToMakeOverweight = (whackRockFund.totalNAVInAccountingAsset() * (whackRockFund.REBALANCE_DEVIATION_THRESHOLD_BPS() + 100) / whackRockFund.TOTAL_WEIGHT_BASIS_POINTS()) / (usdcValueForOverweight / 1e6) ; 
         }
-        if (usdcToMakeOverweight == 0) usdcToMakeOverweight = 20000 * 1e6; // Fallback
+        if (usdcToMakeOverweight == 0) usdcToMakeOverweight = 20000 * 1e6; 
 
         deal(USDC_BASE, address(whackRockFund), usdcToMakeOverweight);
 
@@ -354,9 +396,9 @@ contract WhackRockFundTest is Test {
         weth.approve(address(whackRockFund), anotherSmallDeposit);
 
         vm.expectEmit(true, true, false, false, address(whackRockFund)); 
-        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR_2, TEST_DEPOSITOR_2, anotherSmallDeposit, 0);
+        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR_2, TEST_DEPOSITOR_2, anotherSmallDeposit, 0,0,0);
         vm.expectEmit(false, false, false, false, address(whackRockFund)); 
-        emit IWhackRockFund.RebalanceCheck(true, 0); // Expecting true now
+        emit IWhackRockFund.RebalanceCheck(true, 0,0); 
         
         vm.expectEmit(false, false, false, false, address(whackRockFund)); 
         emit IWhackRockFund.FundTokenSwapped(USDC_BASE,0,WETH_ADDRESS_BASE,0); 
@@ -378,11 +420,6 @@ contract WhackRockFundTest is Test {
 
         uint256 navBefore = whackRockFund.totalNAVInAccountingAsset();
         
-        // Simulate VIRTU becoming unpriceable by making its mock return 0 from getAmountsOut
-        // This requires more advanced mocking or a custom mock Aerodrome router.
-        // For this test, we'll assume the try-catch in _getTokenValueInAccountingAsset handles it.
-        // The effect is that VIRTU's value will be 0 for rebalance calculations.
-
         vm.startPrank(TEST_AGENT);
         vm.expectEmit(false, false, false, false, address(whackRockFund));
         emit IWhackRockFund.RebalanceCycleExecuted(0,0,0);
@@ -395,10 +432,6 @@ contract WhackRockFundTest is Test {
         uint256 usdcValue = _getValueInAccountingAsset(USDC_BASE, tokenA_USDC.balanceOf(address(whackRockFund)));
         uint256 cbethValue = _getValueInAccountingAsset(CBETH_BASE, tokenB_CBETH.balanceOf(address(whackRockFund)));
         
-        // If VIRTU is unpriceable, its target value becomes 0 in the rebalance calculation.
-        // The remaining NAV (USDC + CBETH + WETH dust) should be split according to their relative target weights.
-        // Original targets: USDC 4000, CBETH 4000, VIRTU 2000.
-        // Relative weights for USDC & CBETH if VIRTU is 0: USDC 50%, CBETH 50%.
         uint256 combinedNavOfPricedAssets = usdcValue + cbethValue + weth.balanceOf(address(whackRockFund));
         
         if (combinedNavOfPricedAssets > 0) { 

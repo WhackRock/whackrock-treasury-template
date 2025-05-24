@@ -10,6 +10,18 @@ import {IAerodromeRouter} from "./interfaces/IRouter.sol";
 import {IWhackRockFund} from "./interfaces/IWhackRockFund.sol"; 
 
 /**
+ * @title IWETH (if not implicitly part of IRouter.sol from user's import)
+ * @dev Minimal interface for WETH (Wrapped Ether).
+ */
+interface IWETH is IERC20 {
+    function deposit() external payable;
+    function withdraw(uint256 wad) external;
+}
+
+// Note: The IAerodromeRouter interface definition would ideally be fully present
+// if not correctly imported and resolved by the compiler from "./interfaces/IRouter.sol".
+
+/**
  * @title WhackRockFund
  * @dev An agent-managed fund with custom shares, WETH deposits, and basket withdrawals.
  * Implements an agent-specific yearly AUM fee, collected by minting shares, split with the protocol.
@@ -49,9 +61,8 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     uint256 public constant DEFAULT_SLIPPAGE_BPS = 50; // 0.5%
     uint256 public constant SWAP_DEADLINE_OFFSET = 15 minutes;
     bool public constant DEFAULT_POOL_STABILITY = false;
-    uint256 private constant MINIMUM_SHARES_LIQUIDITY = 1000;
+    uint256 private constant MINIMUM_SHARES_LIQUIDITY = 1000; // In WETH terms for first deposit
     uint256 public constant REBALANCE_DEVIATION_THRESHOLD_BPS = 100; // 1% deviation threshold
-
 
     modifier onlyAgent() {
         require(msg.sender == agent, "WRF: Caller is not the agent");
@@ -66,16 +77,15 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         uint256[] memory _initialTargetWeights,
         string memory _vaultName,
         string memory _vaultSymbol,
-        // Parameters for AUM Fee
         address _agentAumFeeWallet,
-        uint256 _totalAgentAumFeeBpsRate, // Total annual AUM fee rate (agent + protocol)
-        address _protocolAumFeeRecipient, // Address for protocol's 40% share
-        bytes memory /* data */ 
+        uint256 _totalAgentAumFeeBpsRate,
+        address _protocolAumFeeRecipientAddress, // Renamed for clarity
+        bytes memory /* data */ // Unused for now
     ) ERC20(_vaultName, _vaultSymbol) Ownable(_initialOwner) {
         require(_initialAgent != address(0), "WRF: Initial agent cannot be zero address");
         require(_dexRouterAddress != address(0), "WRF: DEX router cannot be zero address");
         require(_agentAumFeeWallet != address(0), "WRF: Agent AUM fee wallet cannot be zero");
-        require(_protocolAumFeeRecipient != address(0), "WRF: Protocol AUM fee recipient cannot be zero");
+        require(_protocolAumFeeRecipientAddress != address(0), "WRF: Protocol AUM fee recipient cannot be zero");
 
         IAerodromeRouter tempRouter = IAerodromeRouter(_dexRouterAddress);
         ACCOUNTING_ASSET = address(tempRouter.weth());
@@ -91,8 +101,8 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         dexRouter = tempRouter;
         allowedTokens = _initialAllowedTokens;
         agentAumFeeWallet = _agentAumFeeWallet;
-        agentAumFeeBps = _totalAgentAumFeeBpsRate; // Store the total AUM fee rate
-        protocolAumFeeRecipient = _protocolAumFeeRecipient;
+        agentAumFeeBps = _totalAgentAumFeeBpsRate;
+        protocolAumFeeRecipient = _protocolAumFeeRecipientAddress;
         lastAgentAumFeeCollectionTimestamp = block.timestamp;
 
         uint256 currentTotalWeight = 0;
@@ -111,7 +121,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         _approveTokenIfNeeded(IERC20(ACCOUNTING_ASSET), address(dexRouter), type(uint256).max);
 
         emit AgentUpdated(address(0), _initialAgent);
-        emit TargetWeightsUpdated(_initialAllowedTokens, _initialTargetWeights);
+        emit TargetWeightsUpdated(msg.sender, _initialAllowedTokens, _initialTargetWeights, block.timestamp); // Added agent and timestamp
     }
 
     function totalNAVInAccountingAsset() public view returns (uint256 totalManagedAssets) {
@@ -127,24 +137,32 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         return totalManagedAssets;
     }
 
-    function _isRebalanceNeeded() internal view returns (bool, uint256 maxDeviationBPS) {
+    function _isRebalanceNeeded() internal view returns (bool needsRebalance, uint256 maxDeviationBPS) {
         uint256 currentNAV = totalNAVInAccountingAsset();
         if (currentNAV == 0) {
             return (false, 0);
         }
         maxDeviationBPS = 0;
-        bool needsRebalance = false;
+        needsRebalance = false; // Explicitly initialize
         for (uint256 i = 0; i < allowedTokens.length; i++) {
             address currentToken = allowedTokens[i];
             uint256 tokenBalance = IERC20(currentToken).balanceOf(address(this));
             uint256 tokenValueInAA = _getTokenValueInAccountingAsset(currentToken, tokenBalance);
-            if (currentNAV == 0) return (true, TOTAL_WEIGHT_BASIS_POINTS);
+            
+            // This check `if (currentNAV == 0) return (true, TOTAL_WEIGHT_BASIS_POINTS);` was inside the loop
+            // and would cause issues if the first token had 0 value but NAV was non-zero due to other tokens.
+            // The initial currentNAV == 0 check at the function start handles the main case.
+            // If currentNAV becomes 0 mid-loop due to an unpriceable token, calculations might be skewed.
+            // _getTokenValueInAccountingAsset returns 0 for unpriceable tokens, which is handled.
+
             uint256 actualWeightBPS = (tokenValueInAA * TOTAL_WEIGHT_BASIS_POINTS) / currentNAV;
             uint256 targetWeightBPS = targetWeights[currentToken];
             uint256 deviation = actualWeightBPS > targetWeightBPS ? actualWeightBPS - targetWeightBPS : targetWeightBPS - actualWeightBPS;
             if (deviation > maxDeviationBPS) maxDeviationBPS = deviation;
             if (deviation > REBALANCE_DEVIATION_THRESHOLD_BPS) needsRebalance = true;
         }
+        // Emitting RebalanceCheck here is more informative as it's called before deciding to rebalance.
+        // The deposit/withdraw functions will also emit it.
         return (needsRebalance, maxDeviationBPS);
     }
 
@@ -152,31 +170,28 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         require(amountWETHToDeposit > 0, "WRF: Deposit amount must be > 0");
         require(receiver != address(0), "WRF: Receiver cannot be zero address");
 
-        // For this version, deposit fee is not implemented as per user's simplification.
-        // If it were, fee logic would go here before NAV calculation for shares.
+        uint256 navBeforeDeposit = totalNAVInAccountingAsset(); 
+        uint256 totalSupplyBeforeDeposit = totalSupply();
 
-        uint256 nav = totalNAVInAccountingAsset(); 
-        uint256 currentTotalSupply = totalSupply();
-
-        if (currentTotalSupply == 0) {
-            sharesMinted = amountWETHToDeposit;
+        if (totalSupplyBeforeDeposit == 0) { // Handles first deposit
+            sharesMinted = amountWETHToDeposit; // Initial share price 1:1 with WETH
             if (sharesMinted < MINIMUM_SHARES_LIQUIDITY && amountWETHToDeposit > 0) {
                 sharesMinted = MINIMUM_SHARES_LIQUIDITY;
             }
         } else {
-            require(nav > 0, "WRF: Cannot deposit to empty vault with existing shares");
-            sharesMinted = (amountWETHToDeposit * currentTotalSupply) / nav;
+            require(navBeforeDeposit > 0, "WRF: Cannot deposit to vault with zero NAV and existing shares");
+            sharesMinted = (amountWETHToDeposit * totalSupplyBeforeDeposit) / navBeforeDeposit;
         }
         require(sharesMinted > 0, "WRF: No shares to mint for deposit");
 
         IERC20(ACCOUNTING_ASSET).safeTransferFrom(msg.sender, address(this), amountWETHToDeposit);
         _mint(receiver, sharesMinted);
 
-        emit WETHDepositedAndSharesMinted(msg.sender, receiver, amountWETHToDeposit, sharesMinted);
+        emit WETHDepositedAndSharesMinted(msg.sender, receiver, amountWETHToDeposit, sharesMinted, navBeforeDeposit, totalSupplyBeforeDeposit);
 
         (bool needsRebalance, uint256 maxDeviationBPS) = _isRebalanceNeeded();
-        emit RebalanceCheck(needsRebalance, maxDeviationBPS);
-        if (needsRebalance || (currentTotalSupply == 0 && totalSupply() > 0) ) { 
+        emit RebalanceCheck(needsRebalance, maxDeviationBPS, totalNAVInAccountingAsset()); // Pass current NAV
+        if (needsRebalance || (totalSupplyBeforeDeposit == 0 && totalSupply() > 0) ) { 
             _rebalance();
         }
         return sharesMinted;
@@ -194,22 +209,26 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
             _spendAllowance(owner, msg.sender, sharesToBurn);
         }
 
-        uint256 currentTotalSupply = totalSupply();
-        require(currentTotalSupply >= sharesToBurn, "WRF: Burn amount exceeds total supply");
+        uint256 totalSupplyBeforeWithdrawal = totalSupply(); // Before burning
+        require(totalSupplyBeforeWithdrawal >= sharesToBurn, "WRF: Burn amount exceeds total supply");
         require(balanceOf(owner) >= sharesToBurn, "WRF: Insufficient shares to burn");
+
+        uint256 navBeforeWithdrawal = totalNAVInAccountingAsset(); // NAV before assets are removed
 
         uint256 numAssetsToWithdraw = allowedTokens.length + 1;
         address[] memory tokensWithdrawn = new address[](numAssetsToWithdraw);
         uint256[] memory amountsWithdrawn = new uint256[](numAssetsToWithdraw);
         uint256 eventIdx = 0;
+        uint256 totalWETHValueOfWithdrawal = 0;
 
         uint256 wethBalance = IERC20(ACCOUNTING_ASSET).balanceOf(address(this));
-        if (wethBalance > 0 && currentTotalSupply > 0) {
-            uint256 wethToWithdraw = (wethBalance * sharesToBurn) / currentTotalSupply;
+        if (wethBalance > 0 && totalSupplyBeforeWithdrawal > 0) {
+            uint256 wethToWithdraw = (wethBalance * sharesToBurn) / totalSupplyBeforeWithdrawal;
             if (wethToWithdraw > 0) {
                 IERC20(ACCOUNTING_ASSET).safeTransfer(receiver, wethToWithdraw);
                 tokensWithdrawn[eventIdx] = ACCOUNTING_ASSET;
                 amountsWithdrawn[eventIdx] = wethToWithdraw;
+                totalWETHValueOfWithdrawal += wethToWithdraw; // Already in WETH
                 eventIdx++;
             }
         }
@@ -217,12 +236,13 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         for (uint256 i = 0; i < allowedTokens.length; i++) {
             address currentToken = allowedTokens[i];
             uint256 tokenBalance = IERC20(currentToken).balanceOf(address(this));
-            if (tokenBalance > 0 && currentTotalSupply > 0) {
-                uint256 tokenAmountToWithdraw = (tokenBalance * sharesToBurn) / currentTotalSupply;
+            if (tokenBalance > 0 && totalSupplyBeforeWithdrawal > 0) {
+                uint256 tokenAmountToWithdraw = (tokenBalance * sharesToBurn) / totalSupplyBeforeWithdrawal;
                 if (tokenAmountToWithdraw > 0) {
                     IERC20(currentToken).safeTransfer(receiver, tokenAmountToWithdraw);
                     tokensWithdrawn[eventIdx] = currentToken;
                     amountsWithdrawn[eventIdx] = tokenAmountToWithdraw;
+                    totalWETHValueOfWithdrawal += _getTokenValueInAccountingAsset(currentToken, tokenAmountToWithdraw);
                     eventIdx++;
                 }
             }
@@ -236,40 +256,39 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
             finalTokensWithdrawn[k] = tokensWithdrawn[k];
             finalAmountsWithdrawn[k] = amountsWithdrawn[k];
         }
-        emit BasketAssetsWithdrawn(owner, receiver, sharesToBurn, finalTokensWithdrawn, finalAmountsWithdrawn);
+        emit BasketAssetsWithdrawn(
+            owner, receiver, sharesToBurn, finalTokensWithdrawn, finalAmountsWithdrawn,
+            navBeforeWithdrawal, totalSupplyBeforeWithdrawal, totalWETHValueOfWithdrawal
+        );
 
         (bool needsRebalance, uint256 maxDeviationBPS) = _isRebalanceNeeded();
-        emit RebalanceCheck(needsRebalance, maxDeviationBPS);
+        emit RebalanceCheck(needsRebalance, maxDeviationBPS, totalNAVInAccountingAsset()); // Pass current NAV
         if (needsRebalance && totalSupply() > 0) {
             _rebalance();
         }
     }
 
-    /**
-     * @notice Collects the accrued AUM-based management fee, splitting it between agent and protocol.
-     * Fee is taken by minting new shares. Callable by anyone.
-     */
-    function collectAgentManagementFee() external { // Renamed for clarity, but it's a total AUM fee
+    function collectAgentManagementFee() external { 
         require(agentAumFeeBps > 0, "WRF: AUM fee not enabled for this fund");
         require(block.timestamp > lastAgentAumFeeCollectionTimestamp, "WRF: No time elapsed for AUM fee");
 
-        uint256 currentTotalNAV = totalNAVInAccountingAsset();
-        uint256 currentTotalShares = totalSupply();
+        uint256 navAtFeeCalc = totalNAVInAccountingAsset(); // NAV at the point of fee calculation
+        uint256 sharesAtFeeCalc = totalSupply(); // Total shares at the point of fee calculation
 
-        if (currentTotalNAV == 0 || currentTotalShares == 0) {
+        if (navAtFeeCalc == 0 || sharesAtFeeCalc == 0) {
             lastAgentAumFeeCollectionTimestamp = block.timestamp;
             return;
         }
 
         uint256 timeElapsed = block.timestamp - lastAgentAumFeeCollectionTimestamp;
-        uint256 totalFeeValueInAA = (currentTotalNAV * agentAumFeeBps * timeElapsed) / (TOTAL_WEIGHT_BASIS_POINTS * 365 days);
+        uint256 totalFeeValueInAA = (navAtFeeCalc * agentAumFeeBps * timeElapsed) / (TOTAL_WEIGHT_BASIS_POINTS * 365 days);
         
         if (totalFeeValueInAA > 0) {
-            uint256 totalSharesToMintForFee = (totalFeeValueInAA * currentTotalShares) / currentTotalNAV;
+            uint256 totalSharesToMintForFee = (totalFeeValueInAA * sharesAtFeeCalc) / navAtFeeCalc;
             
             if (totalSharesToMintForFee > 0) {
                 uint256 agentShares = (totalSharesToMintForFee * AGENT_AUM_FEE_SHARE_BPS) / TOTAL_WEIGHT_BASIS_POINTS;
-                uint256 protocolShares = totalSharesToMintForFee - agentShares; // Remainder goes to protocol
+                uint256 protocolShares = totalSharesToMintForFee - agentShares;
 
                 if (agentShares > 0) {
                     _mint(agentAumFeeWallet, agentShares);
@@ -279,11 +298,11 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
                 }
                 
                 emit AgentAumFeeCollected(
-                    agentAumFeeWallet,
-                    agentShares,
-                    protocolAumFeeRecipient,
-                    protocolShares,
-                    totalFeeValueInAA,
+                    agentAumFeeWallet, agentShares,
+                    protocolAumFeeRecipient, protocolShares,
+                    totalFeeValueInAA, 
+                    navAtFeeCalc, // Added NAV at time of calculation
+                    sharesAtFeeCalc, // Added total shares at time of calculation
                     block.timestamp
                 );
             }
@@ -312,7 +331,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
             targetWeights[allowedTokens[i]] = _weights[i];
             tokensForEvent[i] = allowedTokens[i];
         }
-        emit TargetWeightsUpdated(tokensForEvent, _weights);
+        emit TargetWeightsUpdated(msg.sender, tokensForEvent, _weights, block.timestamp); // Added agent and timestamp
     }
 
     function triggerRebalance() external onlyAgent {
