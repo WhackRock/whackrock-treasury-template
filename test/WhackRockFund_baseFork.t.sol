@@ -91,6 +91,7 @@ contract WhackRockFundTest is Test {
             TEST_AGENT_AUM_FEE_WALLET,
             TEST_TOTAL_AUM_FEE_BPS,
             TEST_PROTOCOL_AUM_RECIPIENT,
+            address(USDC_BASE),
             new bytes(0) 
         );
         vm.stopPrank();

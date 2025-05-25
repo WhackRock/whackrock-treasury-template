@@ -9,21 +9,28 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 import {IAerodromeRouter} from "./interfaces/IRouter.sol"; 
 import {IWhackRockFund} from "./interfaces/IWhackRockFund.sol"; 
 
-
-// Note: The IAerodromeRouter interface definition would ideally be fully present
-// if not correctly imported and resolved by the compiler from "./interfaces/IRouter.sol".
-
 /**
  * @title WhackRockFund
- * @dev An agent-managed fund with custom shares, WETH deposits, and basket withdrawals.
- * Implements an agent-specific yearly AUM fee, collected by minting shares, split with the protocol.
- * Conditionally and automatically rebalances to target weights after deposits and withdrawals
- * if weights deviate beyond a defined threshold.
- * Shares of this fund are ERC20 tokens.
+ * @author WhackRock Labs
+ * @notice An agent-managed investment fund with custom ERC20 shares, WETH deposits, and basket withdrawals
+ * @dev Implements an automated portfolio management system with:
+ *      - ERC20 tokenized shares
+ *      - Dynamic asset allocation through target weights
+ *      - Automatic rebalancing after deposits and withdrawals
+ *      - Agent and protocol fee collection through share minting
+ *      - DEX integration for asset swaps
  */
 contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     using SafeERC20 for IERC20;
 
+    /**
+     * @dev Structure used during rebalancing to track token information
+     * @param token Token address
+     * @param currentBalance Current token balance held by the fund
+     * @param currentValueInAccountingAsset Current value of balance in WETH
+     * @param targetValueInAccountingAsset Target value based on weights in WETH
+     * @param deltaValueInAccountingAsset Difference between target and current value
+     */
     struct TokenRebalanceInfo {
         address token;
         uint256 currentBalance;
@@ -32,36 +39,86 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         int256 deltaValueInAccountingAsset;
     }
 
+    /// @notice Address of the agent managing the fund's investments
     address public agent;
+    
+    /// @notice DEX router used for swapping tokens during rebalancing
     IAerodromeRouter public immutable dexRouter;
+    
+    /// @notice Address of WETH, used as the accounting asset for NAV calculations
     address public immutable ACCOUNTING_ASSET; // WETH
+    
+    /// @notice Address of USDC token used for USD-denominated calculations
     address public immutable USDC_ADDRESS; // USDC token address
 
+    /// @notice Array of token addresses allowed in the fund
     address[] public allowedTokens;
+    
+    /// @notice Mapping of token address to its target weight in basis points
     mapping(address => uint256) public targetWeights;
+    
+    /// @notice Mapping to check if a token is allowed in the fund
     mapping(address => bool) public isAllowedTokenInternal;
 
     // Agent and Protocol AUM Fee parameters
+    /// @notice Address receiving the agent's portion of AUM fees
     address public immutable agentAumFeeWallet;
-    uint256 public immutable agentAumFeeBps; // Annual fee rate in Basis Points for the total AUM fee
-    address public immutable protocolAumFeeRecipient; // Address for protocol's share of AUM fee
+    
+    /// @notice Annual AUM fee rate in basis points
+    uint256 public immutable agentAumFeeBps;
+    
+    /// @notice Address receiving the protocol's portion of AUM fees
+    address public immutable protocolAumFeeRecipient;
+    
+    /// @notice Timestamp of the last AUM fee collection
     uint256 public lastAgentAumFeeCollectionTimestamp;
 
-    uint256 public constant TOTAL_WEIGHT_BASIS_POINTS = 10000; // Represents 100%
-    uint256 public constant AGENT_AUM_FEE_SHARE_BPS = 6000; // 60% of AUM fee to agent
-    uint256 public constant PROTOCOL_AUM_FEE_SHARE_BPS = 4000; // 40% of AUM fee to protocol
+    /// @notice Total basis points representing 100% (10000)
+    uint256 public constant TOTAL_WEIGHT_BASIS_POINTS = 10000;
+    
+    /// @notice Percentage of AUM fee allocated to the agent (60%)
+    uint256 public constant AGENT_AUM_FEE_SHARE_BPS = 6000;
+    
+    /// @notice Percentage of AUM fee allocated to the protocol (40%)
+    uint256 public constant PROTOCOL_AUM_FEE_SHARE_BPS = 4000;
 
-    uint256 public constant DEFAULT_SLIPPAGE_BPS = 50; // 0.5%
+    /// @notice Default slippage tolerance for swaps (0.5%)
+    uint256 public constant DEFAULT_SLIPPAGE_BPS = 50;
+    
+    /// @notice Time buffer added to swap deadlines
     uint256 public constant SWAP_DEADLINE_OFFSET = 15 minutes;
+    
+    /// @notice Default pool stability setting for Aerodrome swaps
     bool public constant DEFAULT_POOL_STABILITY = false;
-    uint256 private constant MINIMUM_SHARES_LIQUIDITY = 1000; // In WETH terms for first deposit
-    uint256 public constant REBALANCE_DEVIATION_THRESHOLD_BPS = 100; // 1% deviation threshold
+    
+    /// @notice Minimum liquidity required for first deposit in WETH units
+    uint256 private constant MINIMUM_SHARES_LIQUIDITY = 1000;
+    
+    /// @notice Threshold for triggering rebalancing (1% deviation)
+    uint256 public constant REBALANCE_DEVIATION_THRESHOLD_BPS = 100;
 
+    /**
+     * @notice Restricts function access to the current agent
+     */
     modifier onlyAgent() {
         require(msg.sender == agent, "WRF: Caller is not the agent");
         _;
     }
 
+    /**
+     * @notice Creates a new WhackRockFund
+     * @param _initialOwner Address of the fund owner
+     * @param _initialAgent Address of the initial agent managing the fund
+     * @param _dexRouterAddress Address of the Aerodrome router
+     * @param _initialAllowedTokens Array of initially allowed token addresses
+     * @param _initialTargetWeights Array of target weights for each allowed token
+     * @param _vaultName Name of the fund's ERC20 token
+     * @param _vaultSymbol Symbol of the fund's ERC20 token
+     * @param _agentAumFeeWallet Address receiving the agent's portion of AUM fees
+     * @param _totalAgentAumFeeBpsRate Total AUM fee rate in basis points
+     * @param _protocolAumFeeRecipientAddress Address receiving the protocol's portion of AUM fees
+     * @param _usdcAddress Address of USDC token
+     */
     constructor(
         address _initialOwner,
         address _initialAgent,
@@ -125,6 +182,11 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         emit TargetWeightsUpdated(msg.sender, _initialAllowedTokens, _initialTargetWeights, block.timestamp); // Added agent and timestamp
     }
 
+    /**
+     * @notice Calculates the total net asset value of the fund in accounting asset (WETH) units
+     * @dev Sums up the WETH value of all tokens in the fund, including WETH itself
+     * @return totalManagedAssets Total NAV in WETH
+     */
     function totalNAVInAccountingAsset() public view returns (uint256 totalManagedAssets) {
         totalManagedAssets = 0;
         for (uint256 i = 0; i < allowedTokens.length; i++) {
@@ -138,6 +200,11 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         return totalManagedAssets;
     }
     
+    /**
+     * @notice Calculates the total net asset value of the fund in USDC units
+     * @dev Converts the WETH NAV to USDC value using DEX quote
+     * @return totalManagedAssetsInUSDC Total NAV in USDC
+     */
     function totalNAVInUSDC() public view returns (uint256 totalManagedAssetsInUSDC) {
         uint256 navInWETH = totalNAVInAccountingAsset();
         if (navInWETH == 0) return 0;
@@ -153,6 +220,12 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         return usdcValue;
     }
     
+    /**
+     * @notice Gets the USDC value of a given WETH amount
+     * @dev Uses the Aerodrome router to get price quote from WETH to USDC
+     * @param _wethAmount Amount of WETH to convert
+     * @return USDC value of the WETH amount
+     */
     function _getWETHValueInUSDC(uint256 _wethAmount) internal view returns (uint256) {
         if (_wethAmount == 0) return 0;
         
@@ -176,6 +249,12 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         return 0;
     }
 
+    /**
+     * @notice Checks if the fund needs rebalancing
+     * @dev Compares current asset weights to target weights and determines maximum deviation
+     * @return needsRebalance True if any asset deviates from target by more than threshold
+     * @return maxDeviationBPS Maximum deviation found in basis points
+     */
     function _isRebalanceNeeded() internal view returns (bool needsRebalance, uint256 maxDeviationBPS) {
         uint256 currentNAV = totalNAVInAccountingAsset();
         if (currentNAV == 0) {
@@ -205,6 +284,14 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         return (needsRebalance, maxDeviationBPS);
     }
 
+    /**
+     * @notice Deposits WETH into the fund and mints shares
+     * @dev Handles first deposit specially, sets initial share price 1:1 with WETH
+     *      May trigger rebalancing if asset weights deviate from targets
+     * @param amountWETHToDeposit Amount of WETH to deposit
+     * @param receiver Address to receive the minted shares
+     * @return sharesMinted Number of shares minted
+     */
     function deposit(uint256 amountWETHToDeposit, address receiver) external returns (uint256 sharesMinted) {
         require(amountWETHToDeposit > 0, "WRF: Deposit amount must be > 0");
         require(receiver != address(0), "WRF: Receiver cannot be zero address");
@@ -236,6 +323,14 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         return sharesMinted;
     }
     
+    /**
+     * @notice Withdraws assets from the fund by burning shares
+     * @dev Burns shares and transfers a proportional amount of all fund assets to the receiver
+     *      May trigger rebalancing if asset weights deviate from targets after withdrawal
+     * @param sharesToBurn Number of shares to burn
+     * @param receiver Address to receive the withdrawn assets
+     * @param owner Address that owns the shares
+     */
     function withdraw(uint256 sharesToBurn, address receiver, address owner) external {
         require(sharesToBurn > 0, "WRF: Shares to burn must be > 0");
         require(receiver != address(0), "WRF: Receiver cannot be zero address");
@@ -307,6 +402,12 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         }
     }
 
+    /**
+     * @notice Collects the AUM fee by minting new shares
+     * @dev Calculates fee based on time elapsed since last collection
+     *      Mints new shares and distributes them between agent and protocol
+     *      according to AGENT_AUM_FEE_SHARE_BPS and PROTOCOL_AUM_FEE_SHARE_BPS
+     */
     function collectAgentManagementFee() external { 
         require(agentAumFeeBps > 0, "WRF: AUM fee not enabled for this fund");
         require(block.timestamp > lastAgentAumFeeCollectionTimestamp, "WRF: No time elapsed for AUM fee");
@@ -349,6 +450,11 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         lastAgentAumFeeCollectionTimestamp = block.timestamp;
     }
 
+    /**
+     * @notice Updates the fund's agent address
+     * @dev Only callable by fund owner
+     * @param _newAgent Address of the new agent
+     */
     function setAgent(address _newAgent) external onlyOwner {
         require(_newAgent != address(0), "WRF: New agent cannot be zero address");
         address oldAgent = agent;
@@ -356,6 +462,12 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         emit AgentUpdated(oldAgent, _newAgent);
     }
 
+    /**
+     * @notice Sets new target weights for the fund's assets
+     * @dev Only callable by the current agent
+     *      Weights must sum to TOTAL_WEIGHT_BASIS_POINTS (10000)
+     * @param _weights Array of new target weights in basis points
+     */
     function setTargetWeights(uint256[] calldata _weights) external onlyAgent {
         require(_weights.length == allowedTokens.length, "WRF: Weights length mismatch");
         uint256 currentTotalWeight = 0;
@@ -373,6 +485,11 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         emit TargetWeightsUpdated(msg.sender, tokensForEvent, _weights, block.timestamp); // Added agent and timestamp
     }
 
+    /**
+     * @notice Manually triggers a rebalance of the fund's assets
+     * @dev Only callable by the agent
+     *      Emits a RebalanceCycleExecuted event with NAV before and after
+     */
     function triggerRebalance() external onlyAgent {
         uint256 navBeforeRebalanceAA = totalNAVInAccountingAsset();
         _rebalance();
@@ -380,6 +497,11 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         emit RebalanceCycleExecuted(navBeforeRebalanceAA, navAfterRebalanceAA, block.timestamp);
     }
 
+    /**
+     * @notice Rebalances the fund's assets to match target weights
+     * @dev First sells tokens that are overweight, then buys tokens that are underweight
+     *      Uses a two-step process to minimize price impact
+     */
     function _rebalance() internal {
         uint256 currentPortfolioNAVForTargets = totalNAVInAccountingAsset();
         if (currentPortfolioNAVForTargets == 0) return;
@@ -443,6 +565,14 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         }
     }
 
+    /**
+     * @notice Swaps tokens using the DEX router
+     * @dev Uses Aerodrome router to execute a swap with slippage protection
+     * @param _tokenIn Address of the token to sell
+     * @param _tokenOut Address of the token to buy
+     * @param _amountIn Amount of input token to swap
+     * @param _slippageBps Maximum acceptable slippage in basis points
+     */
     function _swapTokens(address _tokenIn, address _tokenOut, uint256 _amountIn, uint256 _slippageBps) internal {
         if (_amountIn == 0) return;
         require(_tokenIn != _tokenOut, "WRF: Cannot swap token for itself");
@@ -471,6 +601,13 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         emit FundTokenSwapped(_tokenIn, _amountIn, _tokenOut, actualAmounts[actualAmounts.length - 1]);
     }
 
+    /**
+     * @notice Gets the value of a token amount in accounting asset (WETH) units
+     * @dev Uses the DEX router's price oracle to calculate the equivalent WETH value
+     * @param _token Address of the token to value
+     * @param _amount Amount of the token to value
+     * @return WETH value of the specified token amount
+     */
     function _getTokenValueInAccountingAsset(address _token, uint256 _amount) internal view returns (uint256) {
         if (_amount == 0) return 0;
         require(
@@ -493,12 +630,26 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         }
     }
 
+    /**
+     * @notice Approves a token for spending if current allowance is insufficient
+     * @dev Avoids unnecessary approve calls if allowance is already sufficient
+     * @param _tokenContract The ERC20 token contract
+     * @param _spender Address to approve spending for
+     * @param _amount Amount to approve
+     */
     function _approveTokenIfNeeded(IERC20 _tokenContract, address _spender, uint256 _amount) internal {
         if (_tokenContract.allowance(address(this), _spender) < _amount) {
             _tokenContract.approve(_spender, _amount);
         }
     }
 
+    /**
+     * @notice Emergency function to withdraw ERC20 tokens
+     * @dev Only callable by owner, used in case of token airdrops or emergencies
+     * @param _tokenAddress Address of the token to withdraw
+     * @param _to Address to receive the withdrawn tokens
+     * @param _amount Amount of tokens to withdraw
+     */
     function emergencyWithdrawERC20(address _tokenAddress, address _to, uint256 _amount) external onlyOwner {
         require(_to != address(0), "WRF: Cannot withdraw to zero address");
         IERC20 tokenToWithdraw = IERC20(_tokenAddress);
@@ -508,6 +659,12 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         emit EmergencyWithdrawal(_tokenAddress, _amount);
     }
 
+    /**
+     * @notice Emergency function to withdraw native ETH
+     * @dev Only callable by owner, used in case ETH is accidentally sent to the contract
+     * @param _to Address to receive the withdrawn ETH
+     * @param _amount Amount of ETH to withdraw
+     */
     function emergencyWithdrawNative(address payable _to, uint256 _amount) external onlyOwner {
         require(_to != address(0), "WRF: Cannot withdraw to zero address");
         uint256 balance = address(this).balance;
