@@ -1,6 +1,19 @@
 // SPDX-License-Identifier: BUSL-1.1
-
 pragma solidity ^0.8.20;
+
+/*
+ *  
+ *   oooooo   oooooo     oooo ooooo   ooooo       .o.         .oooooo.   oooo    oooo ooooooooo.     .oooooo.     .oooooo.   oooo    oooo 
+ *   `888.    `888.     .8'  `888'   `888'      .888.       d8P'  `Y8b  `888   .8P'  `888   `Y88.  d8P'  `Y8b   d8P'  `Y8b  `888   .8P'  
+ *    `888.   .8888.   .8'    888     888      .8"888.     888           888  d8'     888   .d88' 888      888 888           888  d8'    
+ *     `888  .8'`888. .8'     888ooooo888     .8' `888.    888           88888[       888ooo88P'  888      888 888           88888[      
+ *      `888.8'  `888.8'      888     888    .88ooo8888.   888           888`88b.     888`88b.    888      888 888           888`88b.    
+ *       `888'    `888'       888     888   .8'     `888.  `88b    ooo   888  `88b.   888  `88b.  `88b    d88' `88b    ooo   888  `88b.  
+ *        `8'      `8'       o888o   o888o o88o     o8888o  `Y8bood8P'  o888o  o888o o888o  o888o  `Y8bood8P'   `Y8bood8P'  o888o  o888o 
+ *  
+ *    WHACKROCK – AGENT MANAGED WEIGHTED FUND  
+ *    © 2024 WhackRock Labs – All rights reserved.
+ */
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IAerodromeRouter} from "./IRouter.sol"; // Defines IAerodromeRouter
@@ -169,6 +182,13 @@ interface IWhackRockFund {
     function USDC_ADDRESS() external view returns (address);
 
     /**
+     * @notice Returns the array of allowed token addresses
+     * @param index Index in the allowed tokens array
+     * @return Token address at the specified index
+     */
+    function allowedTokens(uint256 index) external view returns (address);
+
+    /**
      * @notice Returns the target weight for a specific token
      * @param token Address of the token
      * @return Target weight in basis points (0-10000)
@@ -183,10 +203,46 @@ interface IWhackRockFund {
     function isAllowedTokenInternal(address token) external view returns (bool);
 
     /**
+     * @notice Returns the address receiving the agent's portion of AUM fees
+     * @return Address of the agent AUM fee wallet
+     */
+    function agentAumFeeWallet() external view returns (address);
+
+    /**
+     * @notice Returns the annual AUM fee rate in basis points
+     * @return AUM fee rate in basis points
+     */
+    function agentAumFeeBps() external view returns (uint256);
+
+    /**
+     * @notice Returns the address receiving the protocol's portion of AUM fees
+     * @return Address of the protocol AUM fee recipient
+     */
+    function protocolAumFeeRecipient() external view returns (address);
+
+    /**
+     * @notice Returns the timestamp of the last AUM fee collection
+     * @return Timestamp of the last fee collection
+     */
+    function lastAgentAumFeeCollectionTimestamp() external view returns (uint256);
+
+    /**
      * @notice Returns the total basis points used for percentage calculations
      * @return Total weight basis points (10000 = 100%)
      */
     function TOTAL_WEIGHT_BASIS_POINTS() external view returns (uint256);
+    
+    /**
+     * @notice Returns the percentage of AUM fee allocated to the agent
+     * @return Agent's share of the AUM fee in basis points
+     */
+    function AGENT_AUM_FEE_SHARE_BPS() external view returns (uint256);
+    
+    /**
+     * @notice Returns the percentage of AUM fee allocated to the protocol
+     * @return Protocol's share of the AUM fee in basis points
+     */
+    function PROTOCOL_AUM_FEE_SHARE_BPS() external view returns (uint256);
     
     /**
      * @notice Returns the default slippage tolerance for swaps
@@ -212,7 +268,7 @@ interface IWhackRockFund {
      */
     function REBALANCE_DEVIATION_THRESHOLD_BPS() external view returns (uint256);
 
-    // --- NAV related functions ---
+    // --- Core Functions ---
     
     /**
      * @notice Calculates the total net asset value of the fund in accounting asset (WETH) units
@@ -225,4 +281,71 @@ interface IWhackRockFund {
      * @return totalManagedAssetsInUSDC Total NAV in USDC
      */
     function totalNAVInUSDC() external view returns (uint256 totalManagedAssetsInUSDC);
+
+    /**
+     * @notice Deposits WETH into the fund and mints shares
+     * @dev Handles first deposit specially, sets initial share price 1:1 with WETH
+     *      May trigger rebalancing if asset weights deviate from targets
+     * @param amountWETHToDeposit Amount of WETH to deposit
+     * @param receiver Address to receive the minted shares
+     * @return sharesMinted Number of shares minted
+     */
+    function deposit(uint256 amountWETHToDeposit, address receiver) external returns (uint256 sharesMinted);
+    
+    /**
+     * @notice Withdraws assets from the fund by burning shares
+     * @dev Burns shares and transfers a proportional amount of all fund assets to the receiver
+     *      May trigger rebalancing if asset weights deviate from targets after withdrawal
+     * @param sharesToBurn Number of shares to burn
+     * @param receiver Address to receive the withdrawn assets
+     * @param owner Address that owns the shares
+     */
+    function withdraw(uint256 sharesToBurn, address receiver, address owner) external;
+
+    /**
+     * @notice Collects the AUM fee by minting new shares
+     * @dev Calculates fee based on time elapsed since last collection
+     *      Mints new shares and distributes them between agent and protocol
+     *      according to AGENT_AUM_FEE_SHARE_BPS and PROTOCOL_AUM_FEE_SHARE_BPS
+     */
+    function collectAgentManagementFee() external;
+
+    /**
+     * @notice Updates the fund's agent address
+     * @dev Only callable by fund owner
+     * @param _newAgent Address of the new agent
+     */
+    function setAgent(address _newAgent) external;
+
+    /**
+     * @notice Sets new target weights for the fund's assets
+     * @dev Only callable by the current agent
+     *      Weights must sum to TOTAL_WEIGHT_BASIS_POINTS (10000)
+     * @param _weights Array of new target weights in basis points
+     */
+    function setTargetWeights(uint256[] calldata _weights) external;
+
+    /**
+     * @notice Manually triggers a rebalance of the fund's assets
+     * @dev Only callable by the agent
+     *      Emits a RebalanceCycleExecuted event with NAV before and after
+     */
+    function triggerRebalance() external;
+
+    /**
+     * @notice Emergency function to withdraw ERC20 tokens
+     * @dev Only callable by owner, used in case of token airdrops or emergencies
+     * @param _tokenAddress Address of the token to withdraw
+     * @param _to Address to receive the withdrawn tokens
+     * @param _amount Amount of tokens to withdraw
+     */
+    function emergencyWithdrawERC20(address _tokenAddress, address _to, uint256 _amount) external;
+
+    /**
+     * @notice Emergency function to withdraw native ETH
+     * @dev Only callable by owner, used in case ETH is accidentally sent to the contract
+     * @param _to Address to receive the withdrawn ETH
+     * @param _amount Amount of ETH to withdraw
+     */
+    function emergencyWithdrawNative(address payable _to, uint256 _amount) external;
 }

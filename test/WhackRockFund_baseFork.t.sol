@@ -368,9 +368,11 @@ contract WhackRockFundTest is Test {
         whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR); 
         vm.stopPrank();
 
-        // --- Scenario 1: Deviation just BELOW threshold after a tiny deposit ---
-        uint256 smallDeposit = 0.00001 * 1e18; 
+        // --- Scenario 1: Deviation just BELOW threshold after a small deposit ---
+        // Updated to use minimum deposit amount
+        uint256 smallDeposit = 0.01 ether; // Changed from 0.00001 ether to 0.01 ether (minimum deposit)
         vm.startPrank(TEST_DEPOSITOR_2);
+        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR_2, smallDeposit);
         weth.approve(address(whackRockFund), smallDeposit);
         
         vm.expectEmit(true, true, false, false, address(whackRockFund)); 
@@ -391,7 +393,8 @@ contract WhackRockFundTest is Test {
 
         deal(USDC_BASE, address(whackRockFund), usdcToMakeOverweight);
 
-        uint256 anotherSmallDeposit = 0.00001 * 1e18;
+        // Another small deposit that meets minimum requirements
+        uint256 anotherSmallDeposit = 0.01 ether; // Changed from 0.00001 ether to 0.01 ether
         vm.startPrank(TEST_DEPOSITOR_2);
         deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR_2, anotherSmallDeposit); 
         weth.approve(address(whackRockFund), anotherSmallDeposit);
@@ -412,9 +415,33 @@ contract WhackRockFundTest is Test {
         vm.stopPrank();
     }
 
+    function testSlippageScenarios_RevertsOrAccepts_NoEvents() public {
+        require(defaultAerodromeFactory != address(0), "Aerodrome default factory not set in setUp");
+        uint256 depositAmountWETH = 5 * 1e18;
+        vm.startPrank(TEST_DEPOSITOR);
+        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR, depositAmountWETH);
+        weth.approve(address(whackRockFund), depositAmountWETH);
+        whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR); 
+        vm.stopPrank();
+        assertTrue(true, "Deposit and initial rebalance completed with default slippage settings.");
+    }
+
+    function testZeroBalanceTokenRebalance_NoEvents() public {
+        require(defaultAerodromeFactory != address(0), "Aerodrome default factory not set in setUp");
+        uint256 depositAmountWETH = 5 * 1e18;
+        vm.startPrank(TEST_DEPOSITOR);
+        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR, depositAmountWETH);
+        weth.approve(address(whackRockFund), depositAmountWETH);
+        whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR); 
+        vm.stopPrank();
+        assertTrue(tokenC_VIRTU.balanceOf(address(whackRockFund)) > 0, "VIRTU balance should be > 0 after initial rebalance");
+    }
+
     function testRebalance_HandlesUnpriceableToken() public {
+        require(defaultAerodromeFactory != address(0), "Aerodrome default factory not set in setUp");
         uint256 depositAmountWETH = 10 * 1e18;
         vm.startPrank(TEST_DEPOSITOR);
+        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR, depositAmountWETH);
         weth.approve(address(whackRockFund), depositAmountWETH);
         whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR); 
         vm.stopPrank();
@@ -444,10 +471,44 @@ contract WhackRockFundTest is Test {
         }
     }
 
+    function testRebalanceWhenAlreadyBalanced_NoEvents() public {
+        require(defaultAerodromeFactory != address(0), "Aerodrome default factory not set in setUp");
+        uint256 depositAmountWETH = 10 * 1e18;
+        vm.startPrank(TEST_DEPOSITOR);
+        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR, depositAmountWETH);
+        weth.approve(address(whackRockFund), depositAmountWETH);
+        whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR); 
+        vm.stopPrank();
+
+        uint256 navBeforeSecondRebalance = whackRockFund.totalNAVInAccountingAsset();
+
+        vm.startPrank(TEST_AGENT);
+        whackRockFund.triggerRebalance(); 
+        vm.stopPrank();
+
+        uint256 navAfterSecondRebalance = whackRockFund.totalNAVInAccountingAsset();
+        assertApproxEqAbs(navAfterSecondRebalance, navBeforeSecondRebalance, navBeforeSecondRebalance / 1000); 
+
+        uint256 usdcValueWETH = _getValueInAccountingAsset(USDC_BASE, tokenA_USDC.balanceOf(address(whackRockFund)));
+        uint256 cbethValueWETH = _getValueInAccountingAsset(CBETH_BASE, tokenB_CBETH.balanceOf(address(whackRockFund)));
+        uint256 virtuValueWETH = _getValueInAccountingAsset(VIRTU_BASE, tokenC_VIRTU.balanceOf(address(whackRockFund)));
+
+        uint256 targetUsdc = (navAfterSecondRebalance * 4000) / 10000;
+        uint256 targetCbeth = (navAfterSecondRebalance * 4000) / 10000;
+        uint256 targetVirtu = (navAfterSecondRebalance * 2000) / 10000;
+
+        assertApproxEqAbs(usdcValueWETH, targetUsdc, targetUsdc / 20); 
+        assertApproxEqAbs(cbethValueWETH, targetCbeth, targetCbeth / 20); 
+        assertApproxEqAbs(virtuValueWETH, targetVirtu, targetVirtu / 20);
+        
+        assertTrue(weth.balanceOf(address(whackRockFund)) < 1e15, "WETH balance should be dust after full rebalance cycle");
+    }
+
     function testRebalanceWithExistingAllowedTokens_OverweightSales_NoEvents() public {
         require(defaultAerodromeFactory != address(0), "Aerodrome default factory not set in setUp");
         uint256 initialWethDeposit = 10 * 1e18;
         vm.startPrank(TEST_DEPOSITOR);
+        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR, initialWethDeposit);
         weth.approve(address(whackRockFund), initialWethDeposit);
         whackRockFund.deposit(initialWethDeposit, TEST_DEPOSITOR);
         vm.stopPrank();
@@ -477,6 +538,7 @@ contract WhackRockFundTest is Test {
         require(defaultAerodromeFactory != address(0), "Aerodrome default factory not set in setUp");
         uint256 initialWethDeposit = 10 * 1e18;
         vm.startPrank(TEST_DEPOSITOR);
+        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR, initialWethDeposit);
         weth.approve(address(whackRockFund), initialWethDeposit);
         whackRockFund.deposit(initialWethDeposit, TEST_DEPOSITOR); 
         vm.stopPrank();
@@ -592,58 +654,6 @@ contract WhackRockFundTest is Test {
         assertApproxEqAbs(virtuValueWETH, targetVirtuNew, targetVirtuNew / 10); 
     }
 
-    function testSlippageScenarios_RevertsOrAccepts_NoEvents() public {
-        require(defaultAerodromeFactory != address(0), "Aerodrome default factory not set in setUp");
-        uint256 depositAmountWETH = 2 * 1e18;
-        vm.startPrank(TEST_DEPOSITOR);
-        weth.approve(address(whackRockFund), depositAmountWETH);
-        whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR); 
-        vm.stopPrank();
-        assertTrue(true, "Deposit and initial rebalance completed with default slippage settings.");
-    }
-
-    function testZeroBalanceTokenRebalance_NoEvents() public {
-        require(defaultAerodromeFactory != address(0), "Aerodrome default factory not set in setUp");
-        uint256 depositAmountWETH = 5 * 1e18;
-        vm.startPrank(TEST_DEPOSITOR);
-        weth.approve(address(whackRockFund), depositAmountWETH);
-        whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR); 
-        vm.stopPrank();
-        assertTrue(tokenC_VIRTU.balanceOf(address(whackRockFund)) > 0, "VIRTU balance should be > 0 after initial rebalance");
-    }
-
-    function testRebalanceWhenAlreadyBalanced_NoEvents() public {
-        require(defaultAerodromeFactory != address(0), "Aerodrome default factory not set in setUp");
-        uint256 depositAmountWETH = 10 * 1e18;
-        vm.startPrank(TEST_DEPOSITOR);
-        weth.approve(address(whackRockFund), depositAmountWETH);
-        whackRockFund.deposit(depositAmountWETH, TEST_DEPOSITOR); 
-        vm.stopPrank();
-
-        uint256 navBeforeSecondRebalance = whackRockFund.totalNAVInAccountingAsset();
-
-        vm.startPrank(TEST_AGENT);
-        whackRockFund.triggerRebalance(); 
-        vm.stopPrank();
-
-        uint256 navAfterSecondRebalance = whackRockFund.totalNAVInAccountingAsset();
-        assertApproxEqAbs(navAfterSecondRebalance, navBeforeSecondRebalance, navBeforeSecondRebalance / 1000); 
-
-        uint256 usdcValueWETH = _getValueInAccountingAsset(USDC_BASE, tokenA_USDC.balanceOf(address(whackRockFund)));
-        uint256 cbethValueWETH = _getValueInAccountingAsset(CBETH_BASE, tokenB_CBETH.balanceOf(address(whackRockFund)));
-        uint256 virtuValueWETH = _getValueInAccountingAsset(VIRTU_BASE, tokenC_VIRTU.balanceOf(address(whackRockFund)));
-
-        uint256 targetUsdc = (navAfterSecondRebalance * 4000) / 10000;
-        uint256 targetCbeth = (navAfterSecondRebalance * 4000) / 10000;
-        uint256 targetVirtu = (navAfterSecondRebalance * 2000) / 10000;
-
-        assertApproxEqAbs(usdcValueWETH, targetUsdc, targetUsdc / 20); 
-        assertApproxEqAbs(cbethValueWETH, targetCbeth, targetCbeth / 20); 
-        assertApproxEqAbs(virtuValueWETH, targetVirtu, targetVirtu / 20);
-        
-        assertTrue(weth.balanceOf(address(whackRockFund)) < 1e15, "WETH balance should be dust after full rebalance cycle");
-    }
-
     function testEmergencyWithdrawERC20_AllowedToken_NoEvents() public {
         uint256 amountToSteal = 1 * 1e6; // 1 USDC
         deal(USDC_BASE, address(whackRockFund), amountToSteal * 2);
@@ -669,5 +679,123 @@ contract WhackRockFundTest is Test {
 
         assertEq(nonAllowed.balanceOf(TEST_OWNER), ownerBalanceBefore + amountToSteal);
         assertEq(nonAllowed.balanceOf(address(whackRockFund)), amountToSteal);
+    }
+
+    // --- NEW DEPOSIT LIMIT TESTS ---
+
+    function testDepositBelowMinimumDeposit_Reverts() public {
+        // Try to deposit less than MINIMUM_DEPOSIT (0.01 ether)
+        uint256 depositAmount = 0.009 ether;
+        
+        vm.startPrank(TEST_DEPOSITOR);
+        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR, depositAmount);
+        weth.approve(address(whackRockFund), depositAmount);
+        
+        // Should revert with "WRF: Deposit below minimum"
+        vm.expectRevert("WRF: Deposit below minimum");
+        whackRockFund.deposit(depositAmount, TEST_DEPOSITOR);
+        vm.stopPrank();
+    }
+    
+    function testFirstDepositBelowMinimumInitialDeposit_Reverts() public {
+        // Try to make first deposit below MINIMUM_INITIAL_DEPOSIT (0.1 ether) but above MINIMUM_DEPOSIT (0.01 ether)
+        uint256 depositAmount = 0.05 ether;
+        
+        vm.startPrank(TEST_DEPOSITOR);
+        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR, depositAmount);
+        weth.approve(address(whackRockFund), depositAmount);
+        
+        // Should revert with "WRF: Initial deposit below minimum"
+        vm.expectRevert("WRF: Initial deposit below minimum");
+        whackRockFund.deposit(depositAmount, TEST_DEPOSITOR);
+        vm.stopPrank();
+    }
+    
+    function testFirstDepositAtMinimumInitialDeposit_Succeeds() public {
+        // Make first deposit exactly at MINIMUM_INITIAL_DEPOSIT (0.1 ether)
+        uint256 depositAmount = 0.1 ether;
+        
+        vm.startPrank(TEST_DEPOSITOR);
+        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR, depositAmount);
+        weth.approve(address(whackRockFund), depositAmount);
+        
+        // Should succeed
+        uint256 sharesMinted = whackRockFund.deposit(depositAmount, TEST_DEPOSITOR);
+        vm.stopPrank();
+        
+        // Verify shares were minted
+        assertEq(whackRockFund.balanceOf(TEST_DEPOSITOR), sharesMinted);
+        assertTrue(sharesMinted > 0, "Should have minted shares for minimum initial deposit");
+    }
+    
+    function testSecondDepositAtMinimumDeposit_Succeeds() public {
+        // First make an initial deposit
+        uint256 initialDepositAmount = 0.2 ether;
+        
+        vm.startPrank(TEST_DEPOSITOR);
+        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR, initialDepositAmount);
+        weth.approve(address(whackRockFund), initialDepositAmount);
+        whackRockFund.deposit(initialDepositAmount, TEST_DEPOSITOR);
+        vm.stopPrank();
+        
+        // Now make a second deposit at exactly MINIMUM_DEPOSIT (0.01 ether)
+        uint256 secondDepositAmount = 0.01 ether;
+        
+        vm.startPrank(TEST_DEPOSITOR_2);
+        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR_2, secondDepositAmount);
+        weth.approve(address(whackRockFund), secondDepositAmount);
+        
+        // Should succeed
+        uint256 sharesMinted = whackRockFund.deposit(secondDepositAmount, TEST_DEPOSITOR_2);
+        vm.stopPrank();
+        
+        // Verify shares were minted
+        assertEq(whackRockFund.balanceOf(TEST_DEPOSITOR_2), sharesMinted);
+        assertTrue(sharesMinted > 0, "Should have minted shares for minimum second deposit");
+    }
+    
+    function testDepositExactlyAtMinimums_EqualShareValue() public {
+        // First make an initial deposit at exactly MINIMUM_INITIAL_DEPOSIT
+        uint256 initialDepositAmount = 0.1 ether;
+        
+        vm.startPrank(TEST_DEPOSITOR);
+        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR, initialDepositAmount);
+        weth.approve(address(whackRockFund), initialDepositAmount);
+        uint256 firstSharesMinted = whackRockFund.deposit(initialDepositAmount, TEST_DEPOSITOR);
+        vm.stopPrank();
+        
+        // Let some time pass and trigger a rebalance to ensure stable state
+        vm.warp(block.timestamp + 1 hours);
+        vm.startPrank(TEST_AGENT);
+        whackRockFund.triggerRebalance();
+        vm.stopPrank();
+        
+        // Calculate initial share price
+        uint256 navAfterFirstDeposit = whackRockFund.totalNAVInAccountingAsset();
+        uint256 initialSharePrice = (navAfterFirstDeposit * 1e18) / firstSharesMinted;
+        
+        // Now make a second deposit at exactly MINIMUM_DEPOSIT
+        uint256 secondDepositAmount = 0.01 ether;
+        
+        vm.startPrank(TEST_DEPOSITOR_2);
+        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR_2, secondDepositAmount);
+        weth.approve(address(whackRockFund), secondDepositAmount);
+        uint256 secondSharesMinted = whackRockFund.deposit(secondDepositAmount, TEST_DEPOSITOR_2);
+        vm.stopPrank();
+        
+        // Calculate new share price
+        uint256 navAfterSecondDeposit = whackRockFund.totalNAVInAccountingAsset();
+        uint256 secondSharePrice = (navAfterSecondDeposit * 1e18) / (firstSharesMinted + secondSharesMinted);
+        
+        // Verify share prices are approximately equal
+        // We allow a small deviation due to rounding and potential small changes in token value
+        uint256 priceDifferenceBps = 0;
+        if (secondSharePrice > initialSharePrice) {
+            priceDifferenceBps = ((secondSharePrice - initialSharePrice) * 10000) / initialSharePrice;
+        } else {
+            priceDifferenceBps = ((initialSharePrice - secondSharePrice) * 10000) / initialSharePrice;
+        }
+        
+        assertTrue(priceDifferenceBps < 100, "Share price shouldn't change significantly");
     }
 }

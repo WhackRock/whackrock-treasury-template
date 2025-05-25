@@ -94,6 +94,14 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     /// @notice Minimum liquidity required for first deposit in WETH units
     uint256 private constant MINIMUM_SHARES_LIQUIDITY = 1000;
     
+    /// @notice Minimum initial deposit amount required to create a new fund (0.1 WETH)
+    /// @dev Protects against dust attacks on first deposit that could manipulate share price
+    uint256 public constant MINIMUM_INITIAL_DEPOSIT = 0.1 ether;
+    
+    /// @notice Minimum deposit amount required for all deposits (0.01 WETH)
+    /// @dev Prevents dust deposits that could be used for inflation attacks
+    uint256 public constant MINIMUM_DEPOSIT = 0.01 ether;
+    
     /// @notice Threshold for triggering rebalancing (1% deviation)
     uint256 public constant REBALANCE_DEVIATION_THRESHOLD_BPS = 100;
 
@@ -220,69 +228,6 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         return usdcValue;
     }
     
-    /**
-     * @notice Gets the USDC value of a given WETH amount
-     * @dev Uses the Aerodrome router to get price quote from WETH to USDC
-     * @param _wethAmount Amount of WETH to convert
-     * @return USDC value of the WETH amount
-     */
-    function _getWETHValueInUSDC(uint256 _wethAmount) internal view returns (uint256) {
-        if (_wethAmount == 0) return 0;
-        
-        // Check if we can get a direct quote from WETH to USDC
-        IAerodromeRouter.Route[] memory routes = new IAerodromeRouter.Route[](1);
-        routes[0] = IAerodromeRouter.Route({
-            from: ACCOUNTING_ASSET,
-            to: USDC_ADDRESS,
-            stable: DEFAULT_POOL_STABILITY,
-            factory: dexRouter.defaultFactory()
-        });
-        
-        try dexRouter.getAmountsOut(_wethAmount, routes) returns (uint256[] memory amounts) {
-            if (amounts.length > 0 && amounts[amounts.length - 1] > 0) {
-                return amounts[amounts.length - 1];
-            }
-        } catch {
-            revert("WRF: Failed to get WETH to USDC quote");
-        }
-        
-        return 0;
-    }
-
-    /**
-     * @notice Checks if the fund needs rebalancing
-     * @dev Compares current asset weights to target weights and determines maximum deviation
-     * @return needsRebalance True if any asset deviates from target by more than threshold
-     * @return maxDeviationBPS Maximum deviation found in basis points
-     */
-    function _isRebalanceNeeded() internal view returns (bool needsRebalance, uint256 maxDeviationBPS) {
-        uint256 currentNAV = totalNAVInAccountingAsset();
-        if (currentNAV == 0) {
-            return (false, 0);
-        }
-        maxDeviationBPS = 0;
-        needsRebalance = false; // Explicitly initialize
-        for (uint256 i = 0; i < allowedTokens.length; i++) {
-            address currentToken = allowedTokens[i];
-            uint256 tokenBalance = IERC20(currentToken).balanceOf(address(this));
-            uint256 tokenValueInAA = _getTokenValueInAccountingAsset(currentToken, tokenBalance);
-            
-            // This check `if (currentNAV == 0) return (true, TOTAL_WEIGHT_BASIS_POINTS);` was inside the loop
-            // and would cause issues if the first token had 0 value but NAV was non-zero due to other tokens.
-            // The initial currentNAV == 0 check at the function start handles the main case.
-            // If currentNAV becomes 0 mid-loop due to an unpriceable token, calculations might be skewed.
-            // _getTokenValueInAccountingAsset returns 0 for unpriceable tokens, which is handled.
-
-            uint256 actualWeightBPS = (tokenValueInAA * TOTAL_WEIGHT_BASIS_POINTS) / currentNAV;
-            uint256 targetWeightBPS = targetWeights[currentToken];
-            uint256 deviation = actualWeightBPS > targetWeightBPS ? actualWeightBPS - targetWeightBPS : targetWeightBPS - actualWeightBPS;
-            if (deviation > maxDeviationBPS) maxDeviationBPS = deviation;
-            if (deviation > REBALANCE_DEVIATION_THRESHOLD_BPS) needsRebalance = true;
-        }
-        // Emitting RebalanceCheck here is more informative as it's called before deciding to rebalance.
-        // The deposit/withdraw functions will also emit it.
-        return (needsRebalance, maxDeviationBPS);
-    }
 
     /**
      * @notice Deposits WETH into the fund and mints shares
@@ -293,14 +238,22 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
      * @return sharesMinted Number of shares minted
      */
     function deposit(uint256 amountWETHToDeposit, address receiver) external returns (uint256 sharesMinted) {
-        require(amountWETHToDeposit > 0, "WRF: Deposit amount must be > 0");
+        // Enforce minimum deposit amount for all deposits
+        require(amountWETHToDeposit >= MINIMUM_DEPOSIT, "WRF: Deposit below minimum");
         require(receiver != address(0), "WRF: Receiver cannot be zero address");
 
         uint256 navBeforeDeposit = totalNAVInAccountingAsset(); 
         uint256 totalSupplyBeforeDeposit = totalSupply();
 
         if (totalSupplyBeforeDeposit == 0) { // Handles first deposit
-            sharesMinted = amountWETHToDeposit; // Initial share price 1:1 with WETH
+            // Require a higher minimum deposit for first deposit to prevent share price manipulation
+            require(amountWETHToDeposit >= MINIMUM_INITIAL_DEPOSIT, "WRF: Initial deposit below minimum");
+            
+            // Initial share price 1:1 with WETH
+            sharesMinted = amountWETHToDeposit;
+            
+            // With minimum initial deposit requirement, we can consider removing this
+            // but keeping it as an additional safeguard
             if (sharesMinted < MINIMUM_SHARES_LIQUIDITY && amountWETHToDeposit > 0) {
                 sharesMinted = MINIMUM_SHARES_LIQUIDITY;
             }
@@ -498,6 +451,39 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     }
 
     /**
+     * @notice Emergency function to withdraw ERC20 tokens
+     * @dev Only callable by owner, used in case of token airdrops or emergencies
+     * @param _tokenAddress Address of the token to withdraw
+     * @param _to Address to receive the withdrawn tokens
+     * @param _amount Amount of tokens to withdraw
+     */
+    function emergencyWithdrawERC20(address _tokenAddress, address _to, uint256 _amount) external onlyOwner {
+        require(_to != address(0), "WRF: Cannot withdraw to zero address");
+        IERC20 tokenToWithdraw = IERC20(_tokenAddress);
+        uint256 balance = tokenToWithdraw.balanceOf(address(this));
+        require(_amount <= balance, "WRF: Insufficient balance for emergency withdrawal");
+        tokenToWithdraw.safeTransfer(_to, _amount);
+        emit EmergencyWithdrawal(_tokenAddress, _amount);
+    }
+
+    /**
+     * @notice Emergency function to withdraw native ETH
+     * @dev Only callable by owner, used in case ETH is accidentally sent to the contract
+     * @param _to Address to receive the withdrawn ETH
+     * @param _amount Amount of ETH to withdraw
+     */
+    function emergencyWithdrawNative(address payable _to, uint256 _amount) external onlyOwner {
+        require(_to != address(0), "WRF: Cannot withdraw to zero address");
+        uint256 balance = address(this).balance;
+        require(_amount <= balance, "WRF: Insufficient native (ETH) balance");
+        (bool success,) = _to.call{value: _amount}("");
+        require(success, "WRF: Native (ETH) transfer failed");
+    }
+
+    
+
+    
+    /**
      * @notice Rebalances the fund's assets to match target weights
      * @dev First sells tokens that are overweight, then buys tokens that are underweight
      *      Uses a two-step process to minimize price impact
@@ -601,6 +587,21 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         emit FundTokenSwapped(_tokenIn, _amountIn, _tokenOut, actualAmounts[actualAmounts.length - 1]);
     }
 
+
+    /**
+     * @notice Approves a token for spending if current allowance is insufficient
+     * @dev Avoids unnecessary approve calls if allowance is already sufficient
+     * @param _tokenContract The ERC20 token contract
+     * @param _spender Address to approve spending for
+     * @param _amount Amount to approve
+     */
+    function _approveTokenIfNeeded(IERC20 _tokenContract, address _spender, uint256 _amount) internal {
+        if (_tokenContract.allowance(address(this), _spender) < _amount) {
+            _tokenContract.approve(_spender, _amount);
+        }
+    }
+
+    
     /**
      * @notice Gets the value of a token amount in accounting asset (WETH) units
      * @dev Uses the DEX router's price oracle to calculate the equivalent WETH value
@@ -630,46 +631,69 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         }
     }
 
+    
     /**
-     * @notice Approves a token for spending if current allowance is insufficient
-     * @dev Avoids unnecessary approve calls if allowance is already sufficient
-     * @param _tokenContract The ERC20 token contract
-     * @param _spender Address to approve spending for
-     * @param _amount Amount to approve
+     * @notice Gets the USDC value of a given WETH amount
+     * @dev Uses the Aerodrome router to get price quote from WETH to USDC
+     * @param _wethAmount Amount of WETH to convert
+     * @return USDC value of the WETH amount
      */
-    function _approveTokenIfNeeded(IERC20 _tokenContract, address _spender, uint256 _amount) internal {
-        if (_tokenContract.allowance(address(this), _spender) < _amount) {
-            _tokenContract.approve(_spender, _amount);
+    function _getWETHValueInUSDC(uint256 _wethAmount) internal view returns (uint256) {
+        if (_wethAmount == 0) return 0;
+        
+        // Check if we can get a direct quote from WETH to USDC
+        IAerodromeRouter.Route[] memory routes = new IAerodromeRouter.Route[](1);
+        routes[0] = IAerodromeRouter.Route({
+            from: ACCOUNTING_ASSET,
+            to: USDC_ADDRESS,
+            stable: DEFAULT_POOL_STABILITY,
+            factory: dexRouter.defaultFactory()
+        });
+        
+        try dexRouter.getAmountsOut(_wethAmount, routes) returns (uint256[] memory amounts) {
+            if (amounts.length > 0 && amounts[amounts.length - 1] > 0) {
+                return amounts[amounts.length - 1];
+            }
+        } catch {
+            revert("WRF: Failed to get WETH to USDC quote");
         }
+        
+        return 0;
     }
 
     /**
-     * @notice Emergency function to withdraw ERC20 tokens
-     * @dev Only callable by owner, used in case of token airdrops or emergencies
-     * @param _tokenAddress Address of the token to withdraw
-     * @param _to Address to receive the withdrawn tokens
-     * @param _amount Amount of tokens to withdraw
+     * @notice Checks if the fund needs rebalancing
+     * @dev Compares current asset weights to target weights and determines maximum deviation
+     * @return needsRebalance True if any asset deviates from target by more than threshold
+     * @return maxDeviationBPS Maximum deviation found in basis points
      */
-    function emergencyWithdrawERC20(address _tokenAddress, address _to, uint256 _amount) external onlyOwner {
-        require(_to != address(0), "WRF: Cannot withdraw to zero address");
-        IERC20 tokenToWithdraw = IERC20(_tokenAddress);
-        uint256 balance = tokenToWithdraw.balanceOf(address(this));
-        require(_amount <= balance, "WRF: Insufficient balance for emergency withdrawal");
-        tokenToWithdraw.safeTransfer(_to, _amount);
-        emit EmergencyWithdrawal(_tokenAddress, _amount);
+    function _isRebalanceNeeded() internal view returns (bool needsRebalance, uint256 maxDeviationBPS) {
+        uint256 currentNAV = totalNAVInAccountingAsset();
+        if (currentNAV == 0) {
+            return (false, 0);
+        }
+        maxDeviationBPS = 0;
+        needsRebalance = false; // Explicitly initialize
+        for (uint256 i = 0; i < allowedTokens.length; i++) {
+            address currentToken = allowedTokens[i];
+            uint256 tokenBalance = IERC20(currentToken).balanceOf(address(this));
+            uint256 tokenValueInAA = _getTokenValueInAccountingAsset(currentToken, tokenBalance);
+            
+            // This check `if (currentNAV == 0) return (true, TOTAL_WEIGHT_BASIS_POINTS);` was inside the loop
+            // and would cause issues if the first token had 0 value but NAV was non-zero due to other tokens.
+            // The initial currentNAV == 0 check at the function start handles the main case.
+            // If currentNAV becomes 0 mid-loop due to an unpriceable token, calculations might be skewed.
+            // _getTokenValueInAccountingAsset returns 0 for unpriceable tokens, which is handled.
+
+            uint256 actualWeightBPS = (tokenValueInAA * TOTAL_WEIGHT_BASIS_POINTS) / currentNAV;
+            uint256 targetWeightBPS = targetWeights[currentToken];
+            uint256 deviation = actualWeightBPS > targetWeightBPS ? actualWeightBPS - targetWeightBPS : targetWeightBPS - actualWeightBPS;
+            if (deviation > maxDeviationBPS) maxDeviationBPS = deviation;
+            if (deviation > REBALANCE_DEVIATION_THRESHOLD_BPS) needsRebalance = true;
+        }
+        // Emitting RebalanceCheck here is more informative as it's called before deciding to rebalance.
+        // The deposit/withdraw functions will also emit it.
+        return (needsRebalance, maxDeviationBPS);
     }
 
-    /**
-     * @notice Emergency function to withdraw native ETH
-     * @dev Only callable by owner, used in case ETH is accidentally sent to the contract
-     * @param _to Address to receive the withdrawn ETH
-     * @param _amount Amount of ETH to withdraw
-     */
-    function emergencyWithdrawNative(address payable _to, uint256 _amount) external onlyOwner {
-        require(_to != address(0), "WRF: Cannot withdraw to zero address");
-        uint256 balance = address(this).balance;
-        require(_amount <= balance, "WRF: Insufficient native (ETH) balance");
-        (bool success,) = _to.call{value: _amount}("");
-        require(success, "WRF: Native (ETH) transfer failed");
-    }
 }
