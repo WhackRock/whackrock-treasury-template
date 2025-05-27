@@ -175,10 +175,12 @@ contract WhackRockFundRegistryTest is Test {
 
     function test_RevertCreateWhackRockFund_SymbolTaken() public {
         vm.startPrank(FUND_CREATOR_1);
-        address[] memory fundTokens = new address[](1);
-        fundTokens[0] = USDC_BASE;
-        uint256[] memory fundWeights = new uint256[](1);
-        fundWeights[0] = 10000;
+        address[] memory fundTokens = new address[](2);
+        fundTokens[0] = CBETH_BASE;  // Changed from USDC_BASE
+        fundTokens[1] = VIRTU_BASE;  // Added second token
+        uint256[] memory fundWeights = new uint256[](2);
+        fundWeights[0] = 5000;  // 50%
+        fundWeights[1] = 5000;  // 50%
         usdcToken.approve(address(registryProxy), PROTOCOL_CREATION_FEE_USDC);
         registryProxy.createWhackRockFund(TEST_AGENT, fundTokens, fundWeights, "FundOne", "FONE", TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND);
         vm.stopPrank();
@@ -203,10 +205,12 @@ contract WhackRockFundRegistryTest is Test {
         assertEq(registryAllowed.length, 4); 
 
         vm.startPrank(FUND_CREATOR_1);
-        address[] memory fundTokens = new address[](1);
-        fundTokens[0] = USDC_BASE;
-        uint256[] memory fundWeights = new uint256[](1);
-        fundWeights[0] = 10000;
+        address[] memory fundTokens = new address[](2);
+        fundTokens[0] = CBETH_BASE;  // Changed from USDC_BASE
+        fundTokens[1] = VIRTU_BASE;  // Added second token
+        uint256[] memory fundWeights = new uint256[](2);
+        fundWeights[0] = 5000;  // 50%
+        fundWeights[1] = 5000;  // 50%
         
         usdcToken.approve(address(registryProxy), PROTOCOL_CREATION_FEE_USDC);
         address fundAddr = registryProxy.createWhackRockFund(

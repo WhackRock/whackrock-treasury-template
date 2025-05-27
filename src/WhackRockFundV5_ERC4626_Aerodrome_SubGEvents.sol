@@ -26,13 +26,14 @@ import {IWhackRockFund} from "./interfaces/IWhackRockFund.sol";
 /**
  * @title WhackRockFund
  * @author WhackRock Labs
- * @notice An agent-managed investment fund with custom ERC20 shares, WETH deposits, and basket withdrawals
+ * @notice An agent-managed investment fund with custom ERC20 shares, USDC deposits, and USDC withdrawals
  * @dev Implements an automated portfolio management system with:
  *      - ERC20 tokenized shares
  *      - Dynamic asset allocation through target weights
  *      - Automatic rebalancing after deposits and withdrawals
  *      - Agent and protocol fee collection through share minting
  *      - DEX integration for asset swaps
+ *      - USDC as the accounting asset for all NAV calculations
  */
 contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     using SafeERC20 for IERC20;
@@ -41,8 +42,8 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
      * @dev Structure used during rebalancing to track token information
      * @param token Token address
      * @param currentBalance Current token balance held by the fund
-     * @param currentValueInAccountingAsset Current value of balance in WETH
-     * @param targetValueInAccountingAsset Target value based on weights in WETH
+     * @param currentValueInAccountingAsset Current value of balance in USDC
+     * @param targetValueInAccountingAsset Target value based on weights in USDC
      * @param deltaValueInAccountingAsset Difference between target and current value
      */
     struct TokenRebalanceInfo {
@@ -59,11 +60,16 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     /// @notice DEX router used for swapping tokens during rebalancing
     IAerodromeRouter public immutable dexRouter;
     
-    /// @notice Address of WETH, used as the accounting asset for NAV calculations
-    address public immutable ACCOUNTING_ASSET; // WETH
+    /// @notice Address of USDC, used as the accounting asset for NAV calculations
+    address public immutable ACCOUNTING_ASSET; // USDC
     
-    /// @notice Address of USDC token used for USD-denominated calculations
-    address public immutable USDC_ADDRESS; // USDC token address
+    /// @notice Address of WETH token (kept separate as it may be in allowed tokens)
+    address public immutable WETH_ADDRESS; // WETH token address
+
+    /// @notice Returns USDC address for backward compatibility (same as ACCOUNTING_ASSET)
+    function USDC_ADDRESS() public view returns (address) {
+        return ACCOUNTING_ASSET;
+    }
 
     /// @notice Array of token addresses allowed in the fund
     address[] public allowedTokens;
@@ -105,16 +111,16 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     /// @notice Default pool stability setting for Aerodrome swaps
     bool public constant DEFAULT_POOL_STABILITY = false;
     
-    /// @notice Minimum liquidity required for first deposit in WETH units
+    /// @notice Minimum liquidity required for first deposit in share units
     uint256 private constant MINIMUM_SHARES_LIQUIDITY = 1000;
     
-    /// @notice Minimum initial deposit amount required to create a new fund (0.1 WETH)
+    /// @notice Minimum initial deposit amount required to create a new fund (100 USDC)
     /// @dev Protects against dust attacks on first deposit that could manipulate share price
-    uint256 public constant MINIMUM_INITIAL_DEPOSIT = 0.1 ether;
+    uint256 public constant MINIMUM_INITIAL_DEPOSIT = 100e6; // 100 USDC (6 decimals)
     
-    /// @notice Minimum deposit amount required for all deposits (0.01 WETH)
+    /// @notice Minimum deposit amount required for all deposits (10 USDC)
     /// @dev Prevents dust deposits that could be used for inflation attacks
-    uint256 public constant MINIMUM_DEPOSIT = 0.01 ether;
+    uint256 public constant MINIMUM_DEPOSIT = 10e6; // 10 USDC (6 decimals)
     
     /// @notice Threshold for triggering rebalancing (1% deviation)
     uint256 public constant REBALANCE_DEVIATION_THRESHOLD_BPS = 100;
@@ -162,11 +168,13 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         require(_usdcAddress != address(0), "WRF: USDC address cannot be zero");
 
         IAerodromeRouter tempRouter = IAerodromeRouter(_dexRouterAddress);
-        ACCOUNTING_ASSET = address(tempRouter.weth());
-        require(ACCOUNTING_ASSET != address(0), "WRF: Accounting asset (WETH) not found");
+        WETH_ADDRESS = address(tempRouter.weth());
+        require(WETH_ADDRESS != address(0), "WRF: WETH address not found");
         
-        // Use directly provided USDC address
-        USDC_ADDRESS = _usdcAddress;
+        // Use USDC as the accounting asset
+        ACCOUNTING_ASSET = _usdcAddress;
+        
+        // Remove USDC_ADDRESS as it's now the same as ACCOUNTING_ASSET
 
         require(_initialAllowedTokens.length > 0, "WRF: No allowed tokens provided");
         require(
@@ -186,7 +194,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         for (uint256 i = 0; i < _initialAllowedTokens.length; i++) {
             address currentToken = _initialAllowedTokens[i];
             require(currentToken != address(0), "WRF: Token address cannot be zero");
-            require(currentToken != ACCOUNTING_ASSET, "WRF: Accounting asset (WETH) cannot be in allowedTokens list");
+            require(currentToken != ACCOUNTING_ASSET, "WRF: Accounting asset (USDC) cannot be in allowedTokens list");
             require(_initialTargetWeights[i] > 0, "WRF: Initial weight must be > 0");
 
             currentTotalWeight += _initialTargetWeights[i];
@@ -195,22 +203,30 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
             _approveTokenIfNeeded(IERC20(currentToken), address(dexRouter), type(uint256).max);
         }
         require(currentTotalWeight == TOTAL_WEIGHT_BASIS_POINTS, "WRF: Initial weights do not sum to total");
-        _approveTokenIfNeeded(IERC20(ACCOUNTING_ASSET), address(dexRouter), type(uint256).max);
         
-        // Approve USDC for router if needed
-        _approveTokenIfNeeded(IERC20(USDC_ADDRESS), address(dexRouter), type(uint256).max);
+        // Approve WETH and USDC for router
+        _approveTokenIfNeeded(IERC20(WETH_ADDRESS), address(dexRouter), type(uint256).max);
+        _approveTokenIfNeeded(IERC20(ACCOUNTING_ASSET), address(dexRouter), type(uint256).max);
 
         emit AgentUpdated(address(0), _initialAgent);
-        emit TargetWeightsUpdated(msg.sender, _initialAllowedTokens, _initialTargetWeights, block.timestamp); // Added agent and timestamp
+        emit TargetWeightsUpdated(msg.sender, _initialAllowedTokens, _initialTargetWeights, block.timestamp);
     }
 
     /**
-     * @notice Calculates the total net asset value of the fund in accounting asset (WETH) units
-     * @dev Sums up the WETH value of all tokens in the fund, including WETH itself
-     * @return totalManagedAssets Total NAV in WETH
+     * @notice Calculates the total net asset value of the fund in accounting asset (USDC) units
+     * @dev Sums up the USDC value of all tokens in the fund, including USDC itself
+     * @return totalManagedAssets Total NAV in USDC
      */
     function totalNAVInAccountingAsset() public view returns (uint256 totalManagedAssets) {
         totalManagedAssets = 0;
+        
+        // Add WETH value if any
+        uint256 wethBalance = IERC20(WETH_ADDRESS).balanceOf(address(this));
+        if (wethBalance > 0) {
+            totalManagedAssets += _getTokenValueInAccountingAsset(WETH_ADDRESS, wethBalance);
+        }
+        
+        // Add allowed tokens value
         for (uint256 i = 0; i < allowedTokens.length; i++) {
             address currentToken = allowedTokens[i];
             uint256 balance = IERC20(currentToken).balanceOf(address(this));
@@ -218,42 +234,33 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
                 totalManagedAssets += _getTokenValueInAccountingAsset(currentToken, balance);
             }
         }
+        
+        // Add USDC balance
         totalManagedAssets += IERC20(ACCOUNTING_ASSET).balanceOf(address(this));
         return totalManagedAssets;
     }
     
     /**
      * @notice Calculates the total net asset value of the fund in USDC units
-     * @dev Converts the WETH NAV to USDC value using DEX quote
+     * @dev Since accounting asset is now USDC, this just returns totalNAVInAccountingAsset()
      * @return totalManagedAssetsInUSDC Total NAV in USDC
      */
     function totalNAVInUSDC() public view returns (uint256 totalManagedAssetsInUSDC) {
-        uint256 navInWETH = totalNAVInAccountingAsset();
-        if (navInWETH == 0) return 0;
-        
-        // Convert WETH value to USDC value using DEX router
-        uint256 usdcValue = _getWETHValueInUSDC(navInWETH);
-        
-        // If we couldn't get USDC value (e.g. no liquidity), return 0
-        if (usdcValue == 0) {
-            return 0;
-        }
-        
-        return usdcValue;
+        return totalNAVInAccountingAsset();
     }
     
 
     /**
-     * @notice Deposits WETH into the fund and mints shares
-     * @dev Handles first deposit specially, sets initial share price 1:1 with WETH
+     * @notice Deposits USDC into the fund and mints shares
+     * @dev Handles first deposit specially, sets initial share price 1:1 with USDC
      *      May trigger rebalancing if asset weights deviate from targets
-     * @param amountWETHToDeposit Amount of WETH to deposit
+     * @param amountUSDCToDeposit Amount of USDC to deposit
      * @param receiver Address to receive the minted shares
      * @return sharesMinted Number of shares minted
      */
-    function deposit(uint256 amountWETHToDeposit, address receiver) external returns (uint256 sharesMinted) {
+    function deposit(uint256 amountUSDCToDeposit, address receiver) external returns (uint256 sharesMinted) {
         // Enforce minimum deposit amount for all deposits
-        require(amountWETHToDeposit >= MINIMUM_DEPOSIT, "WRF: Deposit below minimum");
+        require(amountUSDCToDeposit >= MINIMUM_DEPOSIT, "WRF: Deposit below minimum");
         require(receiver != address(0), "WRF: Receiver cannot be zero address");
 
         uint256 navBeforeDeposit = totalNAVInAccountingAsset(); 
@@ -261,26 +268,26 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
 
         if (totalSupplyBeforeDeposit == 0) { // Handles first deposit
             // Require a higher minimum deposit for first deposit to prevent share price manipulation
-            require(amountWETHToDeposit >= MINIMUM_INITIAL_DEPOSIT, "WRF: Initial deposit below minimum");
+            require(amountUSDCToDeposit >= MINIMUM_INITIAL_DEPOSIT, "WRF: Initial deposit below minimum");
             
-            // Initial share price 1:1 with WETH
-            sharesMinted = amountWETHToDeposit;
+            // Initial share price 1:1 with USDC
+            sharesMinted = amountUSDCToDeposit;
             
             // With minimum initial deposit requirement, we can consider removing this
             // but keeping it as an additional safeguard
-            if (sharesMinted < MINIMUM_SHARES_LIQUIDITY && amountWETHToDeposit > 0) {
+            if (sharesMinted < MINIMUM_SHARES_LIQUIDITY && amountUSDCToDeposit > 0) {
                 sharesMinted = MINIMUM_SHARES_LIQUIDITY;
             }
         } else {
             require(navBeforeDeposit > 0, "WRF: Cannot deposit to vault with zero NAV and existing shares");
-            sharesMinted = (amountWETHToDeposit * totalSupplyBeforeDeposit) / navBeforeDeposit;
+            sharesMinted = (amountUSDCToDeposit * totalSupplyBeforeDeposit) / navBeforeDeposit;
         }
         require(sharesMinted > 0, "WRF: No shares to mint for deposit");
 
-        IERC20(ACCOUNTING_ASSET).safeTransferFrom(msg.sender, address(this), amountWETHToDeposit);
+        IERC20(ACCOUNTING_ASSET).safeTransferFrom(msg.sender, address(this), amountUSDCToDeposit);
         _mint(receiver, sharesMinted);
 
-        emit WETHDepositedAndSharesMinted(msg.sender, receiver, amountWETHToDeposit, sharesMinted, navBeforeDeposit, totalSupplyBeforeDeposit);
+        emit USDCDepositedAndSharesMinted(msg.sender, receiver, amountUSDCToDeposit, sharesMinted, navBeforeDeposit, totalSupplyBeforeDeposit);
 
         (bool needsRebalance, uint256 maxDeviationBPS) = _isRebalanceNeeded();
         emit RebalanceCheck(needsRebalance, maxDeviationBPS, totalNAVInAccountingAsset()); // Pass current NAV
@@ -292,10 +299,10 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     
     /**
      * @notice Withdraws assets from the fund by burning shares
-     * @dev Burns shares and transfers a proportional amount of all fund assets to the receiver
+     * @dev Burns shares and converts all proportional assets to USDC before transferring to receiver
      *      May trigger rebalancing if asset weights deviate from targets after withdrawal
      * @param sharesToBurn Number of shares to burn
-     * @param receiver Address to receive the withdrawn assets
+     * @param receiver Address to receive the withdrawn USDC
      * @param owner Address that owns the shares
      */
     function withdraw(uint256 sharesToBurn, address receiver, address owner) external {
@@ -314,56 +321,61 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         require(totalSupplyBeforeWithdrawal >= sharesToBurn, "WRF: Burn amount exceeds total supply");
         require(balanceOf(owner) >= sharesToBurn, "WRF: Insufficient shares to burn");
 
-        uint256 navBeforeWithdrawal = totalNAVInAccountingAsset(); // NAV before assets are removed
+        uint256 navBeforeWithdrawal = totalNAVInAccountingAsset(); // NAV before assets are removed (in USDC)
 
-        uint256 numAssetsToWithdraw = allowedTokens.length + 1;
-        address[] memory tokensWithdrawn = new address[](numAssetsToWithdraw);
-        uint256[] memory amountsWithdrawn = new uint256[](numAssetsToWithdraw);
-        uint256 eventIdx = 0;
-        uint256 totalWETHValueOfWithdrawal = 0;
+        // Calculate expected USDC value to withdraw
+        uint256 expectedUSDCValue = (navBeforeWithdrawal * sharesToBurn) / totalSupplyBeforeWithdrawal;
 
-        uint256 wethBalance = IERC20(ACCOUNTING_ASSET).balanceOf(address(this));
-        if (wethBalance > 0 && totalSupplyBeforeWithdrawal > 0) {
-            uint256 wethToWithdraw = (wethBalance * sharesToBurn) / totalSupplyBeforeWithdrawal;
-            if (wethToWithdraw > 0) {
-                IERC20(ACCOUNTING_ASSET).safeTransfer(receiver, wethToWithdraw);
-                tokensWithdrawn[eventIdx] = ACCOUNTING_ASSET;
-                amountsWithdrawn[eventIdx] = wethToWithdraw;
-                totalWETHValueOfWithdrawal += wethToWithdraw; // Already in WETH
-                eventIdx++;
+        // Burn shares first
+        _burn(owner, sharesToBurn);
+
+        // Step 1: Calculate proportional share of each token to sell
+        // Handle WETH if present
+        uint256 wethBalance = IERC20(WETH_ADDRESS).balanceOf(address(this));
+        if (wethBalance > 0) {
+            uint256 wethShare = (wethBalance * sharesToBurn) / totalSupplyBeforeWithdrawal;
+            if (wethShare > 0) {
+                _swapTokens(WETH_ADDRESS, ACCOUNTING_ASSET, wethShare, DEFAULT_SLIPPAGE_BPS);
             }
         }
 
+        // Handle allowed tokens (excluding USDC)
         for (uint256 i = 0; i < allowedTokens.length; i++) {
             address currentToken = allowedTokens[i];
-            uint256 tokenBalance = IERC20(currentToken).balanceOf(address(this));
-            if (tokenBalance > 0 && totalSupplyBeforeWithdrawal > 0) {
-                uint256 tokenAmountToWithdraw = (tokenBalance * sharesToBurn) / totalSupplyBeforeWithdrawal;
-                if (tokenAmountToWithdraw > 0) {
-                    IERC20(currentToken).safeTransfer(receiver, tokenAmountToWithdraw);
-                    tokensWithdrawn[eventIdx] = currentToken;
-                    amountsWithdrawn[eventIdx] = tokenAmountToWithdraw;
-                    totalWETHValueOfWithdrawal += _getTokenValueInAccountingAsset(currentToken, tokenAmountToWithdraw);
-                    eventIdx++;
+            if (currentToken != ACCOUNTING_ASSET) { // Skip USDC as it's already in the desired form
+                uint256 tokenBalance = IERC20(currentToken).balanceOf(address(this));
+                if (tokenBalance > 0) {
+                    uint256 tokenShare = (tokenBalance * sharesToBurn) / totalSupplyBeforeWithdrawal;
+                    if (tokenShare > 0) {
+                        _swapTokens(currentToken, ACCOUNTING_ASSET, tokenShare, DEFAULT_SLIPPAGE_BPS);
+                    }
                 }
             }
         }
 
-        _burn(owner, sharesToBurn);
+        // Step 2: Calculate total USDC to transfer (including what was already USDC)
+        uint256 usdcBalance = IERC20(ACCOUNTING_ASSET).balanceOf(address(this));
+        uint256 usdcToTransfer = Math.min(usdcBalance, expectedUSDCValue);
 
-        address[] memory finalTokensWithdrawn = new address[](eventIdx);
-        uint256[] memory finalAmountsWithdrawn = new uint256[](eventIdx);
-        for (uint256 k = 0; k < eventIdx; k++) {
-            finalTokensWithdrawn[k] = tokensWithdrawn[k];
-            finalAmountsWithdrawn[k] = amountsWithdrawn[k];
-        }
-        emit BasketAssetsWithdrawn(
-            owner, receiver, sharesToBurn, finalTokensWithdrawn, finalAmountsWithdrawn,
-            navBeforeWithdrawal, totalSupplyBeforeWithdrawal, totalWETHValueOfWithdrawal
+        // Ensure we have enough USDC to satisfy the withdrawal
+        require(usdcToTransfer > 0, "WRF: No USDC to withdraw");
+
+        // Step 3: Transfer USDC to receiver
+        IERC20(ACCOUNTING_ASSET).safeTransfer(receiver, usdcToTransfer);
+
+        // Emit event
+        emit USDCWithdrawn(
+            owner, 
+            receiver, 
+            sharesToBurn, 
+            usdcToTransfer, 
+            navBeforeWithdrawal, 
+            totalSupplyBeforeWithdrawal
         );
 
+        // Check if rebalancing is needed after withdrawal
         (bool needsRebalance, uint256 maxDeviationBPS) = _isRebalanceNeeded();
-        emit RebalanceCheck(needsRebalance, maxDeviationBPS, totalNAVInAccountingAsset()); // Pass current NAV
+        emit RebalanceCheck(needsRebalance, maxDeviationBPS, totalNAVInAccountingAsset());
         if (needsRebalance && totalSupply() > 0) {
             _rebalance();
         }
@@ -617,18 +629,17 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
 
     
     /**
-     * @notice Gets the value of a token amount in accounting asset (WETH) units
-     * @dev Uses the DEX router's price oracle to calculate the equivalent WETH value
+     * @notice Gets the value of a token amount in accounting asset (USDC) units
+     * @dev Uses the DEX router's price oracle to calculate the equivalent USDC value
      * @param _token Address of the token to value
      * @param _amount Amount of the token to value
-     * @return WETH value of the specified token amount
+     * @return USDC value of the specified token amount
      */
     function _getTokenValueInAccountingAsset(address _token, uint256 _amount) internal view returns (uint256) {
         if (_amount == 0) return 0;
-        require(
-            _token != ACCOUNTING_ASSET, "WRF: _getTokenValueInAccountingAsset called for the accounting asset itself"
-        );
-
+        if (_token == ACCOUNTING_ASSET) return _amount; // Already USDC
+        
+        // Try direct route to USDC first
         IAerodromeRouter.Route[] memory routes = new IAerodromeRouter.Route[](1);
         routes[0] = IAerodromeRouter.Route({
             from: _token,
@@ -638,43 +649,66 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         });
 
         try dexRouter.getAmountsOut(_amount, routes) returns (uint256[] memory amounts) {
-            if (amounts.length > 0) return amounts[amounts.length - 1];
-            return 0;
-        } catch {
-            return 0;
-        }
-    }
-
-    
-    /**
-     * @notice Gets the USDC value of a given WETH amount
-     * @dev Uses the Aerodrome router to get price quote from WETH to USDC
-     * @param _wethAmount Amount of WETH to convert
-     * @return USDC value of the WETH amount
-     */
-    function _getWETHValueInUSDC(uint256 _wethAmount) internal view returns (uint256) {
-        if (_wethAmount == 0) return 0;
-        
-        // Check if we can get a direct quote from WETH to USDC
-        IAerodromeRouter.Route[] memory routes = new IAerodromeRouter.Route[](1);
-        routes[0] = IAerodromeRouter.Route({
-            from: ACCOUNTING_ASSET,
-            to: USDC_ADDRESS,
-            stable: DEFAULT_POOL_STABILITY,
-            factory: dexRouter.defaultFactory()
-        });
-        
-        try dexRouter.getAmountsOut(_wethAmount, routes) returns (uint256[] memory amounts) {
             if (amounts.length > 0 && amounts[amounts.length - 1] > 0) {
                 return amounts[amounts.length - 1];
             }
         } catch {
-            revert("WRF: Failed to get WETH to USDC quote");
+            // If direct route fails, try routing through WETH
+            return _getTokenValueViaWETH(_token, _amount);
         }
         
         return 0;
     }
 
+    /**
+     * @notice Gets the USDC value of a token by routing through WETH
+     * @dev Used when direct token->USDC route is not available
+     * @param _token Address of the token to value
+     * @param _amount Amount of the token to value
+     * @return USDC value of the token amount
+     */
+    function _getTokenValueViaWETH(address _token, uint256 _amount) internal view returns (uint256) {
+        if (_amount == 0) return 0;
+        if (_token == WETH_ADDRESS) {
+            // If token is WETH, just get WETH->USDC price
+            IAerodromeRouter.Route[] memory routes = new IAerodromeRouter.Route[](1);
+            routes[0] = IAerodromeRouter.Route({
+                from: WETH_ADDRESS,
+                to: ACCOUNTING_ASSET,
+                stable: false,
+                factory: dexRouter.defaultFactory()
+            });
+            
+            try dexRouter.getAmountsOut(_amount, routes) returns (uint256[] memory amounts) {
+                if (amounts.length > 0) return amounts[amounts.length - 1];
+            } catch {}
+            
+            return 0;
+        }
+        
+        // Route through WETH: token -> WETH -> USDC
+        IAerodromeRouter.Route[] memory routes = new IAerodromeRouter.Route[](2);
+        routes[0] = IAerodromeRouter.Route({
+            from: _token,
+            to: WETH_ADDRESS,
+            stable: false,
+            factory: dexRouter.defaultFactory()
+        });
+        routes[1] = IAerodromeRouter.Route({
+            from: WETH_ADDRESS,
+            to: ACCOUNTING_ASSET,
+            stable: false,
+            factory: dexRouter.defaultFactory()
+        });
+        
+        try dexRouter.getAmountsOut(_amount, routes) returns (uint256[] memory amounts) {
+            if (amounts.length > 0) return amounts[amounts.length - 1];
+        } catch {}
+        
+        return 0;
+    }
+
+    
     /**
      * @notice Checks if the fund needs rebalancing
      * @dev Compares current asset weights to target weights and determines maximum deviation

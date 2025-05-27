@@ -52,7 +52,7 @@ interface IWhackRockFund {
      * @notice Emitted when a rebalance check is performed
      * @param needsRebalance Whether the fund needs rebalancing
      * @param maxDeviationBPS Maximum deviation in basis points from target weights
-     * @param currentNAV_AA Current net asset value in accounting asset (WETH) units
+     * @param currentNAV_AA Current net asset value in accounting asset (USDC) units
      */
     event RebalanceCheck(
         bool needsRebalance, 
@@ -94,7 +94,7 @@ interface IWhackRockFund {
     event EmergencyWithdrawal(address indexed token, uint256 amount);
     
     /**
-     * @notice Emitted when WETH is deposited and shares are minted
+     * @notice Emitted when WETH is deposited and shares are minted (deprecated - kept for backward compatibility)
      * @param depositor Address that deposited WETH
      * @param receiver Address that received the minted shares
      * @param wethDeposited Amount of WETH deposited
@@ -112,7 +112,43 @@ interface IWhackRockFund {
     );
     
     /**
-     * @notice Emitted when shares are burned and assets are withdrawn
+     * @notice Emitted when USDC is deposited and shares are minted
+     * @param depositor Address that deposited USDC
+     * @param receiver Address that received the minted shares
+     * @param usdcDeposited Amount of USDC deposited
+     * @param sharesMinted Amount of shares minted
+     * @param navBeforeDepositUSDC NAV in USDC before the deposit
+     * @param totalSupplyBeforeDeposit Total supply of shares before the deposit
+     */
+    event USDCDepositedAndSharesMinted(
+        address indexed depositor,
+        address indexed receiver,
+        uint256 usdcDeposited,
+        uint256 sharesMinted,
+        uint256 navBeforeDepositUSDC,
+        uint256 totalSupplyBeforeDeposit
+    );
+    
+    /**
+     * @notice Emitted when shares are burned and USDC is withdrawn
+     * @param owner Address that owned the shares
+     * @param receiver Address that received the withdrawn USDC
+     * @param sharesBurned Amount of shares burned
+     * @param usdcWithdrawn Amount of USDC withdrawn
+     * @param navBeforeWithdrawalUSDC NAV in USDC before the withdrawal
+     * @param totalSupplyBeforeWithdrawal Total supply of shares before the withdrawal
+     */
+    event USDCWithdrawn(
+        address indexed owner,
+        address indexed receiver,
+        uint256 sharesBurned,
+        uint256 usdcWithdrawn,
+        uint256 navBeforeWithdrawalUSDC,
+        uint256 totalSupplyBeforeWithdrawal
+    );
+    
+    /**
+     * @notice Emitted when shares are burned and assets are withdrawn (deprecated - kept for backward compatibility)
      * @param owner Address that owned the shares
      * @param receiver Address that received the withdrawn assets
      * @param sharesBurned Amount of shares burned
@@ -139,7 +175,7 @@ interface IWhackRockFund {
      * @param agentSharesMinted Shares minted for the agent's fee
      * @param protocolFeeRecipient Address receiving the protocol's portion of fees
      * @param protocolSharesMinted Shares minted for the protocol's fee
-     * @param totalFeeValueInAccountingAsset Total fee value in accounting asset (WETH) units
+     * @param totalFeeValueInAccountingAsset Total fee value in accounting asset (USDC) units
      * @param navAtFeeCalculation NAV at the time of fee calculation
      * @param totalSharesAtFeeCalculation Total shares at the time of fee calculation
      * @param timestamp Block timestamp when fees were collected
@@ -170,13 +206,19 @@ interface IWhackRockFund {
     function dexRouter() external view returns (IAerodromeRouter);
 
     /**
-     * @notice Returns the accounting asset (WETH) address
+     * @notice Returns the accounting asset (USDC) address
      * @return Address of the accounting asset
      */
     function ACCOUNTING_ASSET() external view returns (address);
 
     /**
-     * @notice Returns the USDC token address
+     * @notice Returns the WETH token address
+     * @return Address of the WETH token
+     */
+    function WETH_ADDRESS() external view returns (address);
+
+    /**
+     * @notice Returns the USDC token address (same as ACCOUNTING_ASSET)
      * @return Address of the USDC token
      */
     function USDC_ADDRESS() external view returns (address);
@@ -271,8 +313,8 @@ interface IWhackRockFund {
     // --- Core Functions ---
     
     /**
-     * @notice Calculates the total net asset value of the fund in accounting asset (WETH) units
-     * @return totalManagedAssets Total NAV in WETH
+     * @notice Calculates the total net asset value of the fund in accounting asset (USDC) units
+     * @return totalManagedAssets Total NAV in USDC
      */
     function totalNAVInAccountingAsset() external view returns (uint256 totalManagedAssets);
     
@@ -283,21 +325,21 @@ interface IWhackRockFund {
     function totalNAVInUSDC() external view returns (uint256 totalManagedAssetsInUSDC);
 
     /**
-     * @notice Deposits WETH into the fund and mints shares
-     * @dev Handles first deposit specially, sets initial share price 1:1 with WETH
+     * @notice Deposits USDC into the fund and mints shares
+     * @dev Handles first deposit specially, sets initial share price 1:1 with USDC
      *      May trigger rebalancing if asset weights deviate from targets
-     * @param amountWETHToDeposit Amount of WETH to deposit
+     * @param amountUSDCToDeposit Amount of USDC to deposit
      * @param receiver Address to receive the minted shares
      * @return sharesMinted Number of shares minted
      */
-    function deposit(uint256 amountWETHToDeposit, address receiver) external returns (uint256 sharesMinted);
+    function deposit(uint256 amountUSDCToDeposit, address receiver) external returns (uint256 sharesMinted);
     
     /**
      * @notice Withdraws assets from the fund by burning shares
-     * @dev Burns shares and transfers a proportional amount of all fund assets to the receiver
+     * @dev Burns shares and converts all proportional assets to USDC before transferring to receiver
      *      May trigger rebalancing if asset weights deviate from targets after withdrawal
      * @param sharesToBurn Number of shares to burn
-     * @param receiver Address to receive the withdrawn assets
+     * @param receiver Address to receive the withdrawn USDC
      * @param owner Address that owns the shares
      */
     function withdraw(uint256 sharesToBurn, address receiver, address owner) external;
