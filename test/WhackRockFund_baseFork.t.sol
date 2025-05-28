@@ -597,7 +597,7 @@ contract WhackRockFundTest is Test {
         uint256 navPerShare1 = shares1 > 0 ? (navAfterDeposit1 * 1e18) / shares1 : 0;
         uint256 navPerShare2 = totalSharesAfterDeposit2 > 0 ? (navAfterDeposit2 * 1e18) / totalSharesAfterDeposit2 : 0;
         if (shares1 > 0 && totalSharesAfterDeposit2 > 0) {
-            assertApproxEqAbs(navPerShare1, navPerShare2, navPerShare1 / 50); 
+            assertApproxEqAbs(navPerShare1, navPerShare2, navPerShare1 / 200); 
         }
 
         uint256 d1_weth_before_withdraw = weth.balanceOf(TEST_DEPOSITOR);
