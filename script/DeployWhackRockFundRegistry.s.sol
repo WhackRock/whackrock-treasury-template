@@ -75,7 +75,11 @@ contract DeployWhackRockFundRegistry is Script {
         // uint256 _maxAgentDepositFeeBpsAllowed 
 
         console.log("Deploying ERC1967Proxy for WhackRockFundRegistry...");
-        ERC1967Proxy proxy = new ERC1967Proxy(
+        
+        // Add a unique salt based on block timestamp to ensure fresh deployment
+        bytes32 salt = keccak256(abi.encodePacked(block.timestamp, deployerAddress));
+        
+        ERC1967Proxy proxy = new ERC1967Proxy{salt: salt}(
             address(registryImplementation),
             initializeData
         );

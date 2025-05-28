@@ -239,7 +239,7 @@ contract WhackRockFundTest is Test {
             expectedTotalFeeValueInAA_calc, 
             initialNav, // navAtFeeCalculation
             initialTotalShares, // totalSharesAtFeeCalculation
-            block.timestamp + oneYearInSeconds 
+            block.timestamp + oneYearInSeconds
         );
 
         whackRockFund.collectAgentManagementFee();
@@ -272,7 +272,7 @@ contract WhackRockFundTest is Test {
                 expectedFeeFor1Sec, 
                 navAfterFirstFee, 
                 sharesAfterFirstFee, 
-                block.timestamp + 1 
+                block.timestamp + 1
             );
         }
         

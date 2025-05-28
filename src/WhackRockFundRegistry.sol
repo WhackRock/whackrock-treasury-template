@@ -117,7 +117,7 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
         __Ownable_init(_initialOwner); 
         __UUPSUpgradeable_init();    
 
-        require(_aerodromeRouterAddress != address(0), "Registry: Aerodrome router zero");
+        require(_aerodromeRouterAddress != address(0), "Registry: Router zero");
         require(_maxInitialFundTokensLength > 0, "Registry: Max fund tokens must be > 0");
         require(_usdcTokenAddress != address(0), "Registry: USDC address zero");
         require(_whackRockRewardsAddr != address(0), "Registry: Rewards address zero");

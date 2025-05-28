@@ -42,6 +42,9 @@ $forgeCommandArgs = @(
     "--broadcast",
     "--verify",
     "--etherscan-api-key", $actualBasescanApiKey,
+    "--slow",
+    "--skip-simulation",
+    "--with-gas-price", "2gwei",
     "-vvvv"
 )
 
