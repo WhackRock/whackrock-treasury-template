@@ -65,11 +65,13 @@ interface IWhackRockFund {
      * @param navBeforeRebalanceAA NAV in accounting asset before rebalancing
      * @param navAfterRebalanceAA NAV in accounting asset after rebalancing
      * @param blockTimestamp Block timestamp when rebalance was executed
+     * @param wethValueInUSDC Value of the WETH in USDC units
      */
     event RebalanceCycleExecuted(
         uint256 navBeforeRebalanceAA,
         uint256 navAfterRebalanceAA,
-        uint256 blockTimestamp
+        uint256 blockTimestamp,
+        uint256 wethValueInUSDC
     );
     
     /**
@@ -101,6 +103,7 @@ interface IWhackRockFund {
      * @param sharesMinted Amount of shares minted
      * @param navBeforeDepositWETH NAV in WETH before the deposit
      * @param totalSupplyBeforeDeposit Total supply of shares before the deposit
+     * @param wethValueInUSDC Value of the WETH deposited in USDC units
      */
     event WETHDepositedAndSharesMinted(
         address indexed depositor,
@@ -108,7 +111,8 @@ interface IWhackRockFund {
         uint256 wethDeposited,
         uint256 sharesMinted,
         uint256 navBeforeDepositWETH,
-        uint256 totalSupplyBeforeDeposit
+        uint256 totalSupplyBeforeDeposit,
+        uint256 wethValueInUSDC
     );
     
     /**
@@ -121,6 +125,7 @@ interface IWhackRockFund {
      * @param navBeforeWithdrawalWETH NAV in WETH before the withdrawal
      * @param totalSupplyBeforeWithdrawal Total supply of shares before the withdrawal
      * @param totalWETHValueOfWithdrawal Total value withdrawn in WETH units
+     * @param wethValueInUSDC Value of the WETH withdrawn in USDC units
      */
     event BasketAssetsWithdrawn(
         address indexed owner,
@@ -130,7 +135,8 @@ interface IWhackRockFund {
         uint256[] amountsWithdrawn,
         uint256 navBeforeWithdrawalWETH,
         uint256 totalSupplyBeforeWithdrawal,
-        uint256 totalWETHValueOfWithdrawal
+        uint256 totalWETHValueOfWithdrawal,
+        uint256 wethValueInUSDC
     );
     
     /**

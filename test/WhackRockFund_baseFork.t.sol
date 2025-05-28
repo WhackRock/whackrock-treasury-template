@@ -143,7 +143,7 @@ contract WhackRockFundTest is Test {
         // --- Expectations for deposit() call ---
         // 1. WETHDepositedAndSharesMinted (6 params: depositor, receiver, wethDeposited, sharesMinted, navBefore, totalSupplyBefore)
         vm.expectEmit(true, true, false, false, address(whackRockFund)); 
-        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR, TEST_DEPOSITOR, depositAmountWETH, 0, 0, 0); 
+        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR, TEST_DEPOSITOR, depositAmountWETH, 0, 0, 0, 0); 
         
         // 2. RebalanceCheck (3 params: needsRebalance, maxDeviationBPS, currentNAV_AA)
         vm.expectEmit(false, false, false, false, address(whackRockFund)); 
@@ -176,7 +176,7 @@ contract WhackRockFundTest is Test {
         // let's simplify this specific test's expectation for the agent's trigger.
         // If this still fails with `log != expected log`, it means FundTokenSwapped *was* emitted.
         vm.expectEmit(false, false, false, false, address(whackRockFund));
-        emit IWhackRockFund.RebalanceCycleExecuted(0,0,0); 
+        emit IWhackRockFund.RebalanceCycleExecuted(0,0,0,0); 
 
         whackRockFund.triggerRebalance();
         vm.stopPrank();
@@ -208,7 +208,7 @@ contract WhackRockFundTest is Test {
         weth.approve(address(whackRockFund), depositAmountWETH);
         // Expect events from deposit's rebalance
         vm.expectEmit(true, true, false, false, address(whackRockFund)); 
-        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR, TEST_DEPOSITOR, depositAmountWETH, 0, 0, 0);
+        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR, TEST_DEPOSITOR, depositAmountWETH, 0, 0, 0, 0);
         vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.RebalanceCheck(true, 0, 0); 
         vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,USDC_BASE,0);
         vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,CBETH_BASE,0);
@@ -289,7 +289,7 @@ contract WhackRockFundTest is Test {
         weth.approve(address(whackRockFund), depositAmountWETH);
         
         vm.expectEmit(true, true, false, false, address(whackRockFund)); 
-        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR, TEST_DEPOSITOR, depositAmountWETH, 0,0,0);
+        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR, TEST_DEPOSITOR, depositAmountWETH, 0,0,0,0);
         vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.RebalanceCheck(true, 0,0);
         vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,USDC_BASE,0);
         vm.expectEmit(false, false, false, false, address(whackRockFund)); emit IWhackRockFund.FundTokenSwapped(WETH_ADDRESS_BASE,0,CBETH_BASE,0);
@@ -313,7 +313,7 @@ contract WhackRockFundTest is Test {
         vm.startPrank(TEST_DEPOSITOR);
         
         vm.expectEmit(false, false, false, false, address(whackRockFund)); // BasketAssetsWithdrawn
-        emit IWhackRockFund.BasketAssetsWithdrawn(TEST_DEPOSITOR, TEST_DEPOSITOR, sharesToBurn, new address[](0), new uint256[](0),0,0,0);
+        emit IWhackRockFund.BasketAssetsWithdrawn(TEST_DEPOSITOR, TEST_DEPOSITOR, sharesToBurn, new address[](0), new uint256[](0),0,0,0,0);
         vm.expectEmit(false, false, false, false, address(whackRockFund)); // RebalanceCheck
         emit IWhackRockFund.RebalanceCheck(false, 0,0); 
         // Swaps might occur in withdraw's rebalance, not strictly checked here for this test's focus
@@ -343,7 +343,7 @@ contract WhackRockFundTest is Test {
 
         vm.startPrank(TEST_AGENT);
         vm.expectEmit(false, false, false, false, address(whackRockFund));
-        emit IWhackRockFund.RebalanceCycleExecuted(0,0,0);
+        emit IWhackRockFund.RebalanceCycleExecuted(0,0,0,0);
         whackRockFund.triggerRebalance();
         vm.stopPrank();
 
@@ -358,7 +358,7 @@ contract WhackRockFundTest is Test {
         weth.approve(address(whackRockFund), depositAmountWETH);
         
         vm.expectEmit(true, true, false, false, address(whackRockFund)); 
-        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR, TEST_DEPOSITOR, depositAmountWETH, 0, 0, 0);
+        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR, TEST_DEPOSITOR, depositAmountWETH, 0, 0, 0, 0);
         vm.expectEmit(false, false, false, false, address(whackRockFund)); 
         emit IWhackRockFund.RebalanceCheck(true, 0, 0); 
         
@@ -376,7 +376,7 @@ contract WhackRockFundTest is Test {
         weth.approve(address(whackRockFund), smallDeposit);
         
         vm.expectEmit(true, true, false, false, address(whackRockFund)); 
-        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR_2, TEST_DEPOSITOR_2, smallDeposit, 0, 0, 0);
+        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR_2, TEST_DEPOSITOR_2, smallDeposit, 0, 0, 0, 0);
         vm.expectEmit(false, false, false, false, address(whackRockFund)); 
         emit IWhackRockFund.RebalanceCheck(false, 0, 0); 
 
@@ -400,7 +400,7 @@ contract WhackRockFundTest is Test {
         weth.approve(address(whackRockFund), anotherSmallDeposit);
 
         vm.expectEmit(true, true, false, false, address(whackRockFund)); 
-        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR_2, TEST_DEPOSITOR_2, anotherSmallDeposit, 0,0,0);
+        emit IWhackRockFund.WETHDepositedAndSharesMinted(TEST_DEPOSITOR_2, TEST_DEPOSITOR_2, anotherSmallDeposit, 0,0,0,0);
         vm.expectEmit(false, false, false, false, address(whackRockFund)); 
         emit IWhackRockFund.RebalanceCheck(true, 0,0); 
         
@@ -450,7 +450,7 @@ contract WhackRockFundTest is Test {
         
         vm.startPrank(TEST_AGENT);
         vm.expectEmit(false, false, false, false, address(whackRockFund));
-        emit IWhackRockFund.RebalanceCycleExecuted(0,0,0);
+        emit IWhackRockFund.RebalanceCycleExecuted(0,0,0,0);
         whackRockFund.triggerRebalance();
         vm.stopPrank();
         

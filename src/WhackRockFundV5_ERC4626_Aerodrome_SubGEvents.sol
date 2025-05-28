@@ -280,7 +280,9 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         IERC20(ACCOUNTING_ASSET).safeTransferFrom(msg.sender, address(this), amountWETHToDeposit);
         _mint(receiver, sharesMinted);
 
-        emit WETHDepositedAndSharesMinted(msg.sender, receiver, amountWETHToDeposit, sharesMinted, navBeforeDeposit, totalSupplyBeforeDeposit);
+        uint256 wethValueInUSDC = _getWETHValueInUSDC();
+
+        emit WETHDepositedAndSharesMinted(msg.sender, receiver, amountWETHToDeposit, sharesMinted, navBeforeDeposit, totalSupplyBeforeDeposit, wethValueInUSDC);
 
         (bool needsRebalance, uint256 maxDeviationBPS) = _isRebalanceNeeded();
         emit RebalanceCheck(needsRebalance, maxDeviationBPS, totalNAVInAccountingAsset()); // Pass current NAV
@@ -322,6 +324,8 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         uint256 eventIdx = 0;
         uint256 totalWETHValueOfWithdrawal = 0;
 
+        _burn(owner, sharesToBurn);
+
         uint256 wethBalance = IERC20(ACCOUNTING_ASSET).balanceOf(address(this));
         if (wethBalance > 0 && totalSupplyBeforeWithdrawal > 0) {
             uint256 wethToWithdraw = (wethBalance * sharesToBurn) / totalSupplyBeforeWithdrawal;
@@ -349,7 +353,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
             }
         }
 
-        _burn(owner, sharesToBurn);
+        
 
         address[] memory finalTokensWithdrawn = new address[](eventIdx);
         uint256[] memory finalAmountsWithdrawn = new uint256[](eventIdx);
@@ -357,9 +361,11 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
             finalTokensWithdrawn[k] = tokensWithdrawn[k];
             finalAmountsWithdrawn[k] = amountsWithdrawn[k];
         }
+        
+        uint256 wethValueInUSDC = _getWETHValueInUSDC();
         emit BasketAssetsWithdrawn(
             owner, receiver, sharesToBurn, finalTokensWithdrawn, finalAmountsWithdrawn,
-            navBeforeWithdrawal, totalSupplyBeforeWithdrawal, totalWETHValueOfWithdrawal
+            navBeforeWithdrawal, totalSupplyBeforeWithdrawal, totalWETHValueOfWithdrawal, wethValueInUSDC
         );
 
         (bool needsRebalance, uint256 maxDeviationBPS) = _isRebalanceNeeded();
@@ -461,7 +467,8 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         uint256 navBeforeRebalanceAA = totalNAVInAccountingAsset();
         _rebalance();
         uint256 navAfterRebalanceAA = totalNAVInAccountingAsset();
-        emit RebalanceCycleExecuted(navBeforeRebalanceAA, navAfterRebalanceAA, block.timestamp);
+        uint256 wethValueInUSDC = _getWETHValueInUSDC();
+        emit RebalanceCycleExecuted(navBeforeRebalanceAA, navAfterRebalanceAA, block.timestamp, wethValueInUSDC);
     }
 
     /**
@@ -708,6 +715,37 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         // Emitting RebalanceCheck here is more informative as it's called before deciding to rebalance.
         // The deposit/withdraw functions will also emit it.
         return (needsRebalance, maxDeviationBPS);
+    }
+
+    /**
+     * @notice Gets the USDC value of a given WETH amount
+     * @dev Uses the Aerodrome router to get price quote from WETH to USDC
+     * @return USDC value of the WETH amount
+     */
+    function _getWETHValueInUSDC() internal view returns (uint256) {
+        
+        // Check if we can get a direct quote from WETH to USDC
+        IAerodromeRouter.Route[] memory routes = new IAerodromeRouter.Route[](1);
+        routes[0] = IAerodromeRouter.Route({
+            from: ACCOUNTING_ASSET, // This is WETH
+            to: USDC_ADDRESS,
+            stable: DEFAULT_POOL_STABILITY,
+            factory: dexRouter.defaultFactory()
+        });
+        
+        try dexRouter.getAmountsOut(1 ether, routes) returns (uint256[] memory amounts) {
+            if (amounts.length > 0 && amounts[amounts.length - 1] > 0) {
+                return amounts[amounts.length - 1];
+            }
+        } catch {
+            // If the direct quote fails (e.g., no direct pool or liquidity), 
+            // it will revert or return 0 based on the try/catch.
+            // The current implementation of this function specific to the main contract
+            // re-throws an error if the quote fails.
+            revert("WRF: Failed to get WETH to USDC quote");
+        }
+        
+        return 0; 
     }
 
 }
