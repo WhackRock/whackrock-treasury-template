@@ -118,7 +118,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     
     /// @notice Minimum initial deposit amount required to create a new fund (0.1 WETH)
     /// @dev Protects against dust attacks on first deposit that could manipulate share price
-    uint256 public constant MINIMUM_INITIAL_DEPOSIT = 0.1 ether;
+    uint256 public constant MINIMUM_INITIAL_DEPOSIT = 0.011 ether;
     
     /// @notice Minimum deposit amount required for all deposits (0.01 WETH)
     /// @dev Prevents dust deposits that could be used for inflation attacks
@@ -448,6 +448,31 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
      * @param _weights Array of new target weights in basis points
      */
     function setTargetWeights(uint256[] calldata _weights) external onlyAgent {
+        _setTargetWeights(_weights);
+    }
+
+    /**
+     * @notice Sets new target weights for the fund's assets and rebalances if needed
+     * @dev Only callable by the current agent
+     *      Weights must sum to TOTAL_WEIGHT_BASIS_POINTS (10000)
+     * @param _weights Array of new target weights in basis points
+     */
+    function setTargetWeightsAndRebalanceIfNeeded(uint256[] calldata _weights) external onlyAgent {
+        _setTargetWeights(_weights);
+        (bool needsRebalance, uint256 maxDeviationBPS) = _isRebalanceNeeded();
+        emit RebalanceCheck(needsRebalance, maxDeviationBPS, totalNAVInAccountingAsset()); // Pass current NAV
+        if (needsRebalance && totalSupply() > 0) {
+            _rebalance();
+        }
+    }
+
+    /**
+     * @notice Sets new target weights for the fund's assets
+     * @dev Only callable by the current agent
+     *      Weights must sum to TOTAL_WEIGHT_BASIS_POINTS (10000)
+     * @param _weights Array of new target weights in basis points
+     */
+    function _setTargetWeights(uint256[] calldata _weights) internal {
         if (_weights.length != allowedTokens.length) revert E2();
         uint256 currentTotalWeight = 0;
         for (uint256 i = 0; i < _weights.length; i++) {
@@ -508,8 +533,109 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     }
 
     
+    /**
+     * @notice Gets the current composition of the fund's assets, including token addresses and symbols.
+     * @dev Returns arrays for current weights (BPS), token addresses, and token symbols.
+     * The order in all arrays corresponds to the order of tokens in the `allowedTokens` array.
+     * @return currentComposition_ An array of current weights in basis points.
+     * @return tokenAddresses_ An array of the addresses of the allowed tokens.
+     * @return tokenSymbols_ An array of the symbols of the allowed tokens.
+     */
+    function getCurrentCompositionBPS()
+        external
+        override
+        view
+        returns (
+            uint256[] memory currentComposition_,
+            address[] memory tokenAddresses_,
+            string[] memory tokenSymbols_
+        )
+    {
+        uint256 numAllowedTokens = allowedTokens.length;
+        currentComposition_ = new uint256[](numAllowedTokens);
+        tokenAddresses_ = new address[](numAllowedTokens);
+        tokenSymbols_ = new string[](numAllowedTokens);
 
-    
+        uint256 currentNAV = totalNAVInAccountingAsset();
+
+        if (currentNAV == 0) {
+            // If NAV is 0, all current weights are 0.
+            // Populate addresses and symbols even if NAV is 0.
+            for (uint256 i = 0; i < numAllowedTokens; i++) {
+                address currentTokenAddress = allowedTokens[i];
+                tokenAddresses_[i] = currentTokenAddress;
+                // Attempt to get symbol, will be empty string if token doesn't have symbol() or is address(0)
+                try IERC20Symbol(currentTokenAddress).symbol() returns (string memory symbol) {
+                    tokenSymbols_[i] = symbol;
+                } catch {
+                    tokenSymbols_[i] = ""; // Default to empty string if symbol call fails
+                }
+                // currentComposition_ is already initialized to zeros
+            }
+            return (currentComposition_, tokenAddresses_, tokenSymbols_);
+        }
+
+        for (uint256 i = 0; i < numAllowedTokens; i++) {
+            address currentTokenAddress = allowedTokens[i];
+            tokenAddresses_[i] = currentTokenAddress;
+
+            try IERC20Symbol(currentTokenAddress).symbol() returns (string memory symbol) {
+                tokenSymbols_[i] = symbol;
+            } catch {
+                tokenSymbols_[i] = ""; // Default to empty string
+            }
+
+            uint256 tokenBalance = IERC20(currentTokenAddress).balanceOf(address(this));
+
+            if (tokenBalance == 0) {
+                currentComposition_[i] = 0;
+                continue;
+            }
+
+            uint256 tokenValueInAA = _getTokenValueInAccountingAsset(currentTokenAddress, tokenBalance);
+            currentComposition_[i] = (tokenValueInAA * TOTAL_WEIGHT_BASIS_POINTS) / currentNAV;
+        }
+        return (currentComposition_, tokenAddresses_, tokenSymbols_);
+    }
+
+    /**
+     * @notice Gets the target composition of the fund's assets, including token addresses and symbols.
+     * @dev Returns arrays for target weights (BPS), token addresses, and token symbols.
+     * The order in all arrays corresponds to the order of tokens in the `allowedTokens` array.
+     * @return targetComposition_ An array of target weights in basis points.
+     * @return tokenAddresses_ An array of the addresses of the allowed tokens.
+     * @return tokenSymbols_ An array of the symbols of the allowed tokens.
+     */
+    function getTargetCompositionBPS()
+        external
+        override
+        view
+        returns (
+            uint256[] memory targetComposition_,
+            address[] memory tokenAddresses_,
+            string[] memory tokenSymbols_
+        )
+    {
+        uint256 numAllowedTokens = allowedTokens.length;
+        targetComposition_ = new uint256[](numAllowedTokens);
+        tokenAddresses_ = new address[](numAllowedTokens);
+        tokenSymbols_ = new string[](numAllowedTokens);
+
+        for (uint256 i = 0; i < numAllowedTokens; i++) {
+            address currentTokenAddress = allowedTokens[i];
+            tokenAddresses_[i] = currentTokenAddress;
+            targetComposition_[i] = targetWeights[currentTokenAddress];
+
+            // Attempt to get symbol, will be empty string if token doesn't have symbol() or is address(0)
+            try IERC20Symbol(currentTokenAddress).symbol() returns (string memory symbol) {
+                tokenSymbols_[i] = symbol;
+            } catch {
+                tokenSymbols_[i] = ""; // Default to empty string if symbol call fails
+            }
+        }
+        return (targetComposition_, tokenAddresses_, tokenSymbols_);
+    }
+
     /**
      * @notice Rebalances the fund's assets to match target weights
      * @dev First sells tokens that are overweight, then buys tokens that are underweight
@@ -719,4 +845,12 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         return (needsRebalance, maxDeviationBPS);
     }
 
+}
+
+/**
+* @notice Minimal interface to fetch an ERC20 token's symbol.
+* @dev Standard IERC20 does not include symbol, but ERC20 contracts typically do.
+*/
+interface IERC20Symbol {
+    function symbol() external view returns (string memory);
 }

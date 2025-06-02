@@ -41,6 +41,14 @@ contract WhackRockFundTest is Test {
     IERC20 public tokenB_CBETH = IERC20(CBETH_BASE);
     IERC20 public tokenC_VIRTU = IERC20(VIRTU_BASE);
 
+    // Error codes from WhackRockFundV5_ERC4626_Aerodrome_SubGEvents.sol
+    error E1(); // Zero address
+    error E2(); // Invalid amount/length
+    error E3(); // Insufficient balance
+    error E4(); // Unauthorized
+    error E5(); // Invalid state
+    error E6(); // Swap failed
+
     address public defaultAerodromeFactory;
 
     function _getValueInAccountingAsset(address tokenAddr, uint256 amount) internal view returns (uint256) {
@@ -691,22 +699,22 @@ contract WhackRockFundTest is Test {
         deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR, depositAmount);
         weth.approve(address(whackRockFund), depositAmount);
         
-        // Should revert with "WRF: Deposit below minimum"
-        vm.expectRevert("WRF: Deposit below minimum");
+        // Should revert with E2() = "WRF: Deposit below minimum"
+        vm.expectRevert(E2.selector);
         whackRockFund.deposit(depositAmount, TEST_DEPOSITOR);
         vm.stopPrank();
     }
     
     function testFirstDepositBelowMinimumInitialDeposit_Reverts() public {
-        // Try to make first deposit below MINIMUM_INITIAL_DEPOSIT (0.1 ether) but above MINIMUM_DEPOSIT (0.01 ether)
-        uint256 depositAmount = 0.05 ether;
+        // Try to make first deposit below MINIMUM_INITIAL_DEPOSIT (0.011 ether) but above MINIMUM_DEPOSIT (0.01 ether)
+        uint256 depositAmount = 0.0105 ether;
         
         vm.startPrank(TEST_DEPOSITOR);
         deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR, depositAmount);
         weth.approve(address(whackRockFund), depositAmount);
         
-        // Should revert with "WRF: Initial deposit below minimum"
-        vm.expectRevert("WRF: Initial deposit below minimum");
+        // Should revert with E2() = "WRF: Initial deposit below minimum"
+        vm.expectRevert(E2.selector);
         whackRockFund.deposit(depositAmount, TEST_DEPOSITOR);
         vm.stopPrank();
     }

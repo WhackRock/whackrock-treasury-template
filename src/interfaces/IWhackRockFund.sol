@@ -332,12 +332,41 @@ interface IWhackRockFund {
     function setTargetWeights(uint256[] calldata _weights) external;
 
     /**
+     * @notice Sets new target weights for the fund's assets and rebalances if needed
+     * @dev Only callable by the current agent
+     *      Weights must sum to TOTAL_WEIGHT_BASIS_POINTS (10000)
+     * @param _weights Array of new target weights in basis points
+     */
+    function setTargetWeightsAndRebalanceIfNeeded(uint256[] calldata _weights) external;
+
+    /**
      * @notice Manually triggers a rebalance of the fund's assets
      * @dev Only callable by the agent
      *      Emits a RebalanceCycleExecuted event with NAV before and after
      */
     function triggerRebalance() external;
 
+    
+    /**
+     * @notice Gets the target composition of the fund's assets, including token addresses and symbols.
+     * @dev Returns arrays for target weights (BPS), token addresses, and token symbols.
+     * The order in all arrays corresponds to the order of tokens in the `allowedTokens` array.
+     * @return targetComposition_ An array of target weights in basis points.
+     * @return tokenAddresses_ An array of the addresses of the allowed tokens.
+     * @return tokenSymbols_ An array of the symbols of the allowed tokens.
+     */
+    function getTargetCompositionBPS() external view returns (uint256[] memory targetComposition_, address[] memory tokenAddresses_, string[] memory tokenSymbols_);
+
+
+    /**
+     * @notice Gets the current composition of the fund's assets, including token addresses and symbols.
+     * @dev Returns arrays for current weights (BPS), token addresses, and token symbols.
+     * The order in all arrays corresponds to the order of tokens in the `allowedTokens` array.
+     * @return currentComposition_ An array of current weights in basis points.
+     * @return tokenAddresses_ An array of the addresses of the allowed tokens.
+     * @return tokenSymbols_ An array of the symbols of the allowed tokens.
+     */
+    function getCurrentCompositionBPS() external view returns (uint256[] memory currentComposition_, address[] memory tokenAddresses_, string[] memory tokenSymbols_);
     /**
      * @notice Emergency function to withdraw ERC20 tokens
      * @dev Only callable by owner, used in case of token airdrops or emergencies
