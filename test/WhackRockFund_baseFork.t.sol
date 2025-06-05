@@ -118,6 +118,7 @@ contract WhackRockFundTest is Test {
             initialTargetWeights,
             "WhackRock Test Vault",
             "WRTV",
+            "https://x.com/WRTV",
             TEST_AGENT_AUM_FEE_WALLET,
             TEST_TOTAL_AUM_FEE_BPS,
             TEST_PROTOCOL_AUM_RECIPIENT,
@@ -847,6 +848,7 @@ contract WhackRockFundTest is Test {
         WhackRockFund localFund = new WhackRockFund(
             TEST_OWNER, TEST_AGENT, AERODROME_ROUTER_ADDRESS_BASE,
             initialTokens, initialWeights, "Local Fund NoSymbol", "LFNS",
+            "https://x.com/LFNS",
             TEST_AGENT_AUM_FEE_WALLET, TEST_TOTAL_AUM_FEE_BPS, TEST_PROTOCOL_AUM_RECIPIENT,
             USDC_BASE, // Mainnet USDC for _usdcAddress param
             new bytes(0)

@@ -296,7 +296,7 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
         fundCounter++;
 
         emit WhackRockFundCreated(
-            fundCounter, fundAddress, msg.sender, _initialAgent, _vaultName, _vaultSymbol,
+            fundCounter, fundAddress, msg.sender, _initialAgent, _vaultName, _vaultSymbol, _vaultURI,
             _fundAllowedTokens, _initialTargetWeights, 
             _agentAumFeeWalletForFund, 
             _agentSetTotalAumFeeBps,    
