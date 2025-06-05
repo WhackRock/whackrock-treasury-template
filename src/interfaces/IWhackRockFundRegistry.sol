@@ -118,6 +118,7 @@ interface IWhackRockFundRegistry {
      * @param _initialTargetWeights Corresponding target weights for _fundAllowedTokens (sum must be 10000 BPS)
      * @param _vaultName Name for the new fund's ERC20 shares
      * @param _vaultSymbol Symbol for the new fund's ERC20 shares (must be unique)
+     * @param _vaultURI URI for the new fund's ERC20 shares
      * @param _agentAumFeeWalletForFund The wallet address that will receive the agent's AUM fees
      * @param _agentSetTotalAumFeeBps The total AUM fee in basis points set by the agent (must not exceed maximum)
      * @return fundAddress The address of the newly created WhackRockFund
@@ -128,6 +129,7 @@ interface IWhackRockFundRegistry {
         uint256[] memory _initialTargetWeights,
         string memory _vaultName,
         string memory _vaultSymbol,
+        string memory _vaultURI,
         address _agentAumFeeWalletForFund,
         uint256 _agentSetTotalAumFeeBps
     ) external returns (address fundAddress);

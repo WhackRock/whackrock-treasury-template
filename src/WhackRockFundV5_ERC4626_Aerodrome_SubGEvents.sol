@@ -73,6 +73,9 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     /// @notice Address of USDC token used for USD-denominated calculations
     address public immutable USDC_ADDRESS; // USDC token address
 
+    /// @notice Base URL for fund URIs
+    string public baseURI;
+
     /// @notice Array of token addresses allowed in the fund
     address[] public allowedTokens;
     
@@ -157,6 +160,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         uint256[] memory _initialTargetWeights,
         string memory _vaultName,
         string memory _vaultSymbol,
+        string memory _vaultURI,
         address _agentAumFeeWallet,
         uint256 _totalAgentAumFeeBpsRate,
         address _protocolAumFeeRecipientAddress,
@@ -186,6 +190,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         agentAumFeeBps = _totalAgentAumFeeBpsRate;
         protocolAumFeeRecipient = _protocolAumFeeRecipientAddress;
         lastAgentAumFeeCollectionTimestamp = block.timestamp;
+        baseURI = _vaultURI;
 
         uint256 currentTotalWeight = 0;
         for (uint256 i = 0; i < _initialAllowedTokens.length; i++) {

@@ -252,6 +252,7 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
         uint256[] memory _initialTargetWeights,
         string memory _vaultName,
         string memory _vaultSymbol,
+        string memory _vaultURI,
         address _agentAumFeeWalletForFund, 
         uint256 _agentSetTotalAumFeeBps 
     ) external override returns (address fundAddress) {
@@ -279,6 +280,7 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
             _initialTargetWeights,
             _vaultName,
             _vaultSymbol,
+            _vaultURI,
             _agentAumFeeWalletForFund,     
             _agentSetTotalAumFeeBps,       
             protocolAumFeeRecipientForFunds,

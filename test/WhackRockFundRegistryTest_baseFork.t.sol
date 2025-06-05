@@ -21,7 +21,7 @@ address constant WETH_ADDRESS_BASE = 0x4200000000000000000000000000000000000006;
 
 // Example ERC20 tokens on Base for testing allowed list
 address constant USDC_BASE = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // USDC address for fees
-address constant CBETH_BASE = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf; 
+address constant CBBTC_BASE = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf; 
 address constant VIRTU_BASE = 0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b;
 address constant ANOTHER_TOKEN_BASE = 0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA; // Example: DAI on Base
 
@@ -80,7 +80,7 @@ contract WhackRockFundRegistryTest is Test {
         // 5. Pre-populate registry's allowed tokens list for tests (as REGISTRY_OWNER)
         vm.startPrank(REGISTRY_OWNER);
         registryProxy.addRegistryAllowedToken(USDC_BASE);
-        registryProxy.addRegistryAllowedToken(CBETH_BASE);
+        registryProxy.addRegistryAllowedToken(CBBTC_BASE);
         registryProxy.addRegistryAllowedToken(VIRTU_BASE);
         vm.stopPrank();
 
@@ -124,7 +124,7 @@ contract WhackRockFundRegistryTest is Test {
     function testCreateWhackRockFund_Success() public {
         vm.startPrank(FUND_CREATOR_1);
         address[] memory fundTokens = new address[](2);
-        fundTokens[0] = CBETH_BASE; // Using tokens already allowed in setUp
+        fundTokens[0] = CBBTC_BASE; // Using tokens already allowed in setUp
         fundTokens[1] = VIRTU_BASE;
 
         uint256[] memory fundWeights = new uint256[](2);

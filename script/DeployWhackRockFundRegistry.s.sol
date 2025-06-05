@@ -20,7 +20,7 @@ contract DeployWhackRockFundRegistry is Script {
     address constant AERODROME_ROUTER_ADDRESS_BASE = 0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43; 
     address constant USDC_BASE_FOR_FEE = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // USDC for creation fees & allowed token
     address constant WETH_BASE = 0x4200000000000000000000000000000000000006; // WETH for Base
-    address constant CBETH_BASE = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf; // cbETH as an allowed token
+    address constant CBBTC_BASE = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf; // cbETH as an allowed token
     address constant VIRTU_BASE = 0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b; // VIRTU as an allowed token
 
     // Registry Initialization Parameters (Customize as needed)
@@ -64,16 +64,6 @@ contract DeployWhackRockFundRegistry is Script {
             MAX_AGENT_DEPOSIT_FEE_BPS_REGISTRY
         );
 
-        // address _initialOwner,
-        // address _aerodromeRouterAddress,
-        // uint256 _maxInitialFundTokensLength,
-        // address _usdcTokenAddress,
-        // address _whackRockRewardsAddr,
-        // uint256 _protocolCreationFeeUsdc, 
-        // uint256 _totalAumFeeBps,          
-        // address _protocolAumRecipient,
-        // uint256 _maxAgentDepositFeeBpsAllowed 
-
         console.log("Deploying ERC1967Proxy for WhackRockFundRegistry...");
         
         // Add a unique salt based on block timestamp to ensure fresh deployment
@@ -93,36 +83,40 @@ contract DeployWhackRockFundRegistry is Script {
         console.log("Adding initial allowed tokens to the registry...");
         registryAtProxy.addRegistryAllowedToken(USDC_BASE_FOR_FEE);
         console.log("Added USDC as allowed token:", USDC_BASE_FOR_FEE);
-        registryAtProxy.addRegistryAllowedToken(CBETH_BASE);
-        console.log("Added CBETH as allowed token:", CBETH_BASE);
+        registryAtProxy.addRegistryAllowedToken(CBBTC_BASE);
+        console.log("Added CBETH as allowed token:", CBBTC_BASE);
         registryAtProxy.addRegistryAllowedToken(VIRTU_BASE);
         console.log("Added VIRTU as allowed token:", VIRTU_BASE);
         console.log("Initial allowed tokens added successfully.");
 
         // --- Create a Dummy WhackRockFund ---
         console.log("Creating a Dummy WhackRockFund...");
-        string memory fundName = "Dummy WhackRock Fund";
-        string memory fundSymbol = "DWRF";
-        address[] memory initialAllowedTokens = new address[](2);
+        string memory fundName = "BenFan Fund by WhackRock";
+        string memory fundSymbol = "BFWRF";
+        string memory fundURI = "https://x.com/benjAImin_agent";
+        address[] memory initialAllowedTokens = new address[](3);
         initialAllowedTokens[0] = USDC_BASE_FOR_FEE;
-        initialAllowedTokens[1] = CBETH_BASE;
-        uint256[] memory initialTargetWeightsBps = new uint256[](2);
-        initialTargetWeightsBps[0] = 5000; // 50%
+        initialAllowedTokens[1] = CBBTC_BASE;
+        initialAllowedTokens[2] = VIRTU_BASE;
+        uint256[] memory initialTargetWeightsBps = new uint256[](3);
+        initialTargetWeightsBps[0] = 4000; // 50%
         initialTargetWeightsBps[1] = 5000; // 50%
+        initialTargetWeightsBps[2] = 1000; // 0%
         
         address agentAumFeeWalletForFund = deployerAddress; 
-        uint256 agentSetTotalAumFeeBps = 50; 
+        uint256 agentSetTotalAumFeeBps = 200; 
         address initialAgentForFund = deployerAddress; // Use deployer as the initial agent for the dummy fund
 
         // Call createWhackRockFund with arguments matching the actual contract signature
         newFundAddress = registryAtProxy.createWhackRockFund(
-            initialAgentForFund,        // 1. address _initialAgent
+            initialAgentForFund,      // 1. address _initialAgent
             initialAllowedTokens,     // 2. address[] memory _fundAllowedTokens
             initialTargetWeightsBps,  // 3. uint256[] memory _initialTargetWeights
             fundName,                 // 4. string memory _vaultName
             fundSymbol,               // 5. string memory _vaultSymbol
-            agentAumFeeWalletForFund, // 6. address _agentAumFeeWalletForFund
-            agentSetTotalAumFeeBps    // 7. uint256 _agentSetTotalAumFeeBps
+            fundURI,                  // 6. string memory _vaultURI
+            agentAumFeeWalletForFund, // 7. address _agentAumFeeWalletForFund
+            agentSetTotalAumFeeBps    // 8. uint256 _agentSetTotalAumFeeBps
         );
         console.log("Dummy WhackRockFund created at:", newFundAddress);
         // --- End Dummy Fund Creation ---
@@ -132,10 +126,6 @@ contract DeployWhackRockFundRegistry is Script {
             console.log("Transferring ownership of the registry to:", REGISTRY_OWNER);
             registryAtProxy.transferOwnership(REGISTRY_OWNER);
             console.log("Ownership transfer initiated. New owner will be:", REGISTRY_OWNER);
-            // Note: OpenZeppelin's Ownable typically has a two-step transfer (proposeOwner, acceptOwnership) 
-            // if using Ownable2Step. However, OwnableUpgradeable's transferOwnership is direct.
-            // Confirming the WhackRockFundRegistry's inherited Ownable version.
-            // Assuming standard OwnableUpgradeable's direct transferOwnership.
         } else if (REGISTRY_OWNER == deployerAddress) {
             console.log("Deployer is already the REGISTRY_OWNER. No ownership transfer needed.");
         } else {
@@ -162,7 +152,7 @@ contract DeployWhackRockFundRegistry is Script {
         console.log("Max Agent Deposit Fee BPS:", MAX_AGENT_DEPOSIT_FEE_BPS_REGISTRY);
         console.log("--- Initially Allowed Tokens Added ---");
         console.log("USDC:", USDC_BASE_FOR_FEE);
-        console.log("CBETH:", CBETH_BASE);
+        console.log("CBETH:", CBBTC_BASE);
         console.log("VIRTU:", VIRTU_BASE);
     }
 } 
