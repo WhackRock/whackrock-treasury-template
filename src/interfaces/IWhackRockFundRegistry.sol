@@ -99,6 +99,13 @@ interface IWhackRockFundRegistry {
     function addRegistryAllowedToken(address _token) external;
 
     /**
+     * @notice Adds a tokens to the registry's global allowlist
+     * @dev Only callable by owner, cannot add address(0) or WETH
+     * @param _tokens Address of the token to add
+     */
+    function batchAddRegistryAllowedToken(address[] memory _tokens) external;
+
+    /**
      * @notice Removes a token from the registry's global list of allowed tokens
      * @dev This implementation reorders the list for gas efficiency
      * @param _token The address of the token to remove

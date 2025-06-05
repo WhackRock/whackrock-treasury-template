@@ -22,6 +22,20 @@ contract DeployWhackRockFundRegistry is Script {
     address constant WETH_BASE = 0x4200000000000000000000000000000000000006; // WETH for Base
     address constant CBBTC_BASE = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf; // cbETH as an allowed token
     address constant VIRTU_BASE = 0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b; // VIRTU as an allowed token
+    address constant BasedPepe_BASE = 0x52b492a33E447Cdb854c7FC19F1e57E8BfA1777D; 
+    address constant TOSHI_BASE = 0xAC1Bd2486aAf3B5C0fc3Fd868558b082a531B2B4; 
+    address constant AIXBT_BASE = 0x4F9Fd6Be4a90f2620860d680c0d4d5Fb53d1A825; 
+    address constant wstETH_BASE = 0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452; 
+
+    address[] INITIAL_ALLOWED_TOKENS = [
+        USDC_BASE_FOR_FEE,
+        CBBTC_BASE,
+        VIRTU_BASE,
+        BasedPepe_BASE,
+        TOSHI_BASE,
+        AIXBT_BASE,
+        wstETH_BASE
+    ];
 
     // Registry Initialization Parameters (Customize as needed)
     // initialOwner will be msg.sender (the deployer) during initialization
@@ -81,13 +95,7 @@ contract DeployWhackRockFundRegistry is Script {
         WhackRockFundRegistry registryAtProxy = WhackRockFundRegistry(payable(registryProxyAddress));
 
         console.log("Adding initial allowed tokens to the registry...");
-        registryAtProxy.addRegistryAllowedToken(USDC_BASE_FOR_FEE);
-        console.log("Added USDC as allowed token:", USDC_BASE_FOR_FEE);
-        registryAtProxy.addRegistryAllowedToken(CBBTC_BASE);
-        console.log("Added CBETH as allowed token:", CBBTC_BASE);
-        registryAtProxy.addRegistryAllowedToken(VIRTU_BASE);
-        console.log("Added VIRTU as allowed token:", VIRTU_BASE);
-        console.log("Initial allowed tokens added successfully.");
+        registryAtProxy.batchAddRegistryAllowedToken(INITIAL_ALLOWED_TOKENS);
 
         // --- Create a Dummy WhackRockFund ---
         console.log("Creating a Dummy WhackRockFund...");
