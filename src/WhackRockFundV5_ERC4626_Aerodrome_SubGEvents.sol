@@ -425,8 +425,8 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
                     agentAumFeeWallet, agentShares,
                     protocolAumFeeRecipient, protocolShares,
                     totalFeeValueInAA, 
-                    navAtFeeCalc, // Added NAV at time of calculation
-                    sharesAtFeeCalc, // Added total shares at time of calculation
+                    navAtFeeCalc,
+                    sharesAtFeeCalc,
                     block.timestamp
                 );
             }
@@ -497,14 +497,10 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     /**
      * @notice Manually triggers a rebalance of the fund's assets
      * @dev Only callable by the agent
-     *      Emits a RebalanceCycleExecuted event with NAV before and after
+     *      RebalanceCycleExecuted event is emitted by _rebalance() function
      */
     function triggerRebalance() external onlyAgent {
-        uint256 navBeforeRebalanceAA = totalNAVInAccountingAsset();
         _rebalance();
-        uint256 navAfterRebalanceAA = totalNAVInAccountingAsset();
-        uint256 wethValueInUSDC = _getWETHValueInUSDC(1 ether);
-        emit RebalanceCycleExecuted(navBeforeRebalanceAA, navAfterRebalanceAA, block.timestamp, wethValueInUSDC);
     }
 
     /**
@@ -645,10 +641,11 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
      * @notice Rebalances the fund's assets to match target weights
      * @dev First sells tokens that are overweight, then buys tokens that are underweight
      *      Uses a two-step process to minimize price impact
+     *      Always emits RebalanceCycleExecuted event when rebalancing occurs
      */
     function _rebalance() internal {
-        uint256 currentPortfolioNAVForTargets = totalNAVInAccountingAsset();
-        if (currentPortfolioNAVForTargets == 0) return;
+        uint256 navBeforeRebalanceAA = totalNAVInAccountingAsset();
+        if (navBeforeRebalanceAA == 0) return;
 
         TokenRebalanceInfo[] memory rebalanceInfos = new TokenRebalanceInfo[](allowedTokens.length);
 
@@ -659,7 +656,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
             rebalanceInfos[i].currentValueInAccountingAsset =
                 _getTokenValueInAccountingAsset(currentToken, rebalanceInfos[i].currentBalance);
             rebalanceInfos[i].targetValueInAccountingAsset =
-                (currentPortfolioNAVForTargets * targetWeights[currentToken]) / TOTAL_WEIGHT_BASIS_POINTS;
+                (navBeforeRebalanceAA * targetWeights[currentToken]) / TOTAL_WEIGHT_BASIS_POINTS;
             rebalanceInfos[i].deltaValueInAccountingAsset = int256(rebalanceInfos[i].targetValueInAccountingAsset)
                 - int256(rebalanceInfos[i].currentValueInAccountingAsset);
         }
@@ -707,6 +704,11 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
                 _swapTokens(ACCOUNTING_ASSET, rebalanceInfos[i].token, actualAAToSpend, DEFAULT_SLIPPAGE_BPS);
             }
         }
+
+        // Emit rebalance cycle executed event
+        uint256 navAfterRebalanceAA = totalNAVInAccountingAsset();
+        uint256 wethValueInUSDC = _getWETHValueInUSDC(1 ether);
+        emit RebalanceCycleExecuted(navBeforeRebalanceAA, navAfterRebalanceAA, block.timestamp, wethValueInUSDC);
     }
 
     /**
