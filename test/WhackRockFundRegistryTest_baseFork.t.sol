@@ -150,6 +150,7 @@ contract WhackRockFundRegistryTest is Test {
             vaultName,
             vaultSymbol,
             "TEST_URI",
+            "test description",
             TEST_AGENT_AUM_FEE_WALLET_FUND,
             TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND
         );
@@ -181,13 +182,13 @@ contract WhackRockFundRegistryTest is Test {
         uint256[] memory fundWeights = new uint256[](1);
         fundWeights[0] = 10000;
         usdcToken.approve(address(registryProxy), PROTOCOL_CREATION_FEE_USDC);
-        registryProxy.createWhackRockFund(TEST_AGENT, fundTokens, fundWeights, "FundOne", "FONE", "FONE", TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND);
+        registryProxy.createWhackRockFund(TEST_AGENT, fundTokens, fundWeights, "FundOne", "FONE", "FONE", "test description", TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND);
         vm.stopPrank();
 
         vm.startPrank(FUND_CREATOR_2);
         usdcToken.approve(address(registryProxy), PROTOCOL_CREATION_FEE_USDC);
         vm.expectRevert("Registry: Vault symbol already taken");
-        registryProxy.createWhackRockFund(TEST_AGENT, fundTokens, fundWeights, "FundTwo", "FONE","FONE", TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND);
+        registryProxy.createWhackRockFund(TEST_AGENT, fundTokens, fundWeights, "FundTwo", "FONE","FONE", "test description",TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND);
         vm.stopPrank();
     }
     
@@ -211,7 +212,7 @@ contract WhackRockFundRegistryTest is Test {
         
         usdcToken.approve(address(registryProxy), PROTOCOL_CREATION_FEE_USDC);
         address fundAddr = registryProxy.createWhackRockFund(
-            TEST_AGENT, fundTokens, fundWeights, "GetterFund", "GF", "GF_uri",
+            TEST_AGENT, fundTokens, fundWeights, "GetterFund", "GF", "GF_uri", "test description",
             TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND
         );
         vm.stopPrank();
