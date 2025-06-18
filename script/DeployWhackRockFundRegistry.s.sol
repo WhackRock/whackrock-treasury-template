@@ -122,6 +122,7 @@ contract DeployWhackRockFundRegistry is Script {
             initialTargetWeightsBps,  // 3. uint256[] memory _initialTargetWeights
             fundName,                 // 4. string memory _vaultName
             fundSymbol,               // 5. string memory _vaultSymbol
+            "A fan of Ben Cowen, this agent watches his latest videos and decides which assets to hold in the fund.  The ONLY assets allowed are cbBTC, Virtuals and USDC",
             fundURI,                  // 6. string memory _vaultURI
             agentAumFeeWalletForFund, // 7. address _agentAumFeeWalletForFund
             agentSetTotalAumFeeBps    // 8. uint256 _agentSetTotalAumFeeBps

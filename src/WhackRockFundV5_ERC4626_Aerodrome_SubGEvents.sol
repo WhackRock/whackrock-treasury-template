@@ -121,7 +121,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
     
     /// @notice Minimum initial deposit amount required to create a new fund (0.1 WETH)
     /// @dev Protects against dust attacks on first deposit that could manipulate share price
-    uint256 public constant MINIMUM_INITIAL_DEPOSIT = 0.011 ether;
+    uint256 public constant MINIMUM_INITIAL_DEPOSIT = 0.01 ether;
     
     /// @notice Minimum deposit amount required for all deposits (0.01 WETH)
     /// @dev Prevents dust deposits that could be used for inflation attacks
