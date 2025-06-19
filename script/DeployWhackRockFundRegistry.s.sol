@@ -25,17 +25,38 @@ contract DeployWhackRockFundRegistry is Script {
     address constant VIRTU_BASE = 0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b; // VIRTU as an allowed token
     address constant BasedPepe_BASE = 0x52b492a33E447Cdb854c7FC19F1e57E8BfA1777D; 
     address constant TOSHI_BASE = 0xAC1Bd2486aAf3B5C0fc3Fd868558b082a531B2B4; 
+    address constant BRETT = 0x532f27101965dd16442E59d40670FaF5eBB142E4; 
     address constant AIXBT_BASE = 0x4F9Fd6Be4a90f2620860d680c0d4d5Fb53d1A825; 
     address constant wstETH_BASE = 0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452; 
+
+    address constant uSOL = 0x9B8Df6E244526ab5F6e6400d331DB28C8fdDdb55; 
+    address constant uNEAR = 0x5ed25E305E08F58AFD7995EaC72563E6BE65A617; 
+    address constant uLINK = 0xd403D1624DAEF243FbcBd4A80d8A6F36afFe32b2;
+    address constant uSUI = 0xb0505e5a99abd03d94a1169e638B78EDfEd26ea4;
+
+    address constant Aero = 0x940181a94A35A4569E4529A3CDfB74e38FD98631;
+    address constant Curve = 0x8Ee73c484A26e0A5df2Ee2a4960B789967dd0415;
+    address constant AAVE = 0x63706e401c06ac8513145b7687A14804d17f814b;
+
+
+
 
     address[] INITIAL_ALLOWED_TOKENS = [
         USDC_BASE_FOR_FEE,
         CBBTC_BASE,
-        VIRTU_BASE,
+        wstETH_BASE,
+        VIRTU_BASE,        
+        uSOL,
+        uNEAR,
+        uSUI,
+        Aero,
+        Curve,
+        AAVE,
+        uLINK,
         BasedPepe_BASE,
         TOSHI_BASE,
         AIXBT_BASE,
-        wstETH_BASE
+        BRETT
     ];
 
     // Registry Initialization Parameters (Customize as needed)
@@ -141,23 +162,6 @@ contract DeployWhackRockFundRegistry is Script {
         } else {
             console.log("REGISTRY_OWNER is address(0). Ownership not transferred.");
         }
-
-        console.log("Dummy WhackRockFund fund for basescan verification");
-        new WhackRockFund(
-            deployerAddress, //_initialOwner
-            initialAgentForFund, //_initialAgent
-            AERODROME_ROUTER_ADDRESS_BASE, // _dexRouterAddress
-            initialAllowedTokens, // _initialAllowedTokens
-            initialTargetWeightsBps, // _initialTargetWeights
-            fundName, // _vaultName
-            fundSymbol, // _vaultSymbol
-            fundURI, // _vaultURI
-            agentAumFeeWalletForFund, // _agentAumFeeWallet
-            agentSetTotalAumFeeBps, // _totalAgentAumFeeBps
-            PROTOCOL_AUM_FEE_RECIPIENT_FOR_FUNDS, // _protocolAumFeeRecipientAddress
-            USDC_BASE_FOR_FEE, // _usdcAddress
-            bytes("") // data
-        );
 
         vm.stopBroadcast();
 
