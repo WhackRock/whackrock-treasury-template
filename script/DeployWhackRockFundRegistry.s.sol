@@ -6,6 +6,7 @@ import "forge-std/console.sol";
 
 // Contract to be deployed
 import {WhackRockFundRegistry} from "../src/WhackRockFundRegistry.sol";
+import {WhackRockFund} from "../src/WhackRockFundV5_ERC4626_Aerodrome_SubGEvents.sol";
 
 // For deploying UUPS proxy
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -140,6 +141,23 @@ contract DeployWhackRockFundRegistry is Script {
         } else {
             console.log("REGISTRY_OWNER is address(0). Ownership not transferred.");
         }
+
+        console.log("Dummy WhackRockFund fund for basescan verification");
+        new WhackRockFund(
+            deployerAddress, //_initialOwner
+            initialAgentForFund, //_initialAgent
+            AERODROME_ROUTER_ADDRESS_BASE, // _dexRouterAddress
+            initialAllowedTokens, // _initialAllowedTokens
+            initialTargetWeightsBps, // _initialTargetWeights
+            fundName, // _vaultName
+            fundSymbol, // _vaultSymbol
+            fundURI, // _vaultURI
+            agentAumFeeWalletForFund, // _agentAumFeeWallet
+            agentSetTotalAumFeeBps, // _totalAgentAumFeeBps
+            PROTOCOL_AUM_FEE_RECIPIENT_FOR_FUNDS, // _protocolAumFeeRecipientAddress
+            USDC_BASE_FOR_FEE, // _usdcAddress
+            bytes("") // data
+        );
 
         vm.stopBroadcast();
 
