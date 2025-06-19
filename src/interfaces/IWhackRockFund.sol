@@ -88,12 +88,6 @@ interface IWhackRockFund {
         uint256 amountTo
     );
     
-    /**
-     * @notice Emitted during emergency token withdrawals
-     * @param token Address of the token withdrawn
-     * @param amount Amount of token withdrawn
-     */
-    event EmergencyWithdrawal(address indexed token, uint256 amount);
     
     /**
      * @notice Emitted when WETH is deposited and shares are minted
@@ -348,39 +342,22 @@ interface IWhackRockFund {
 
     
     /**
-     * @notice Gets the target composition of the fund's assets, including token addresses and symbols.
-     * @dev Returns arrays for target weights (BPS), token addresses, and token symbols.
+     * @notice Gets the target composition of the fund's assets.
+     * @dev Returns arrays for target weights (BPS) and token addresses.
      * The order in all arrays corresponds to the order of tokens in the `allowedTokens` array.
      * @return targetComposition_ An array of target weights in basis points.
      * @return tokenAddresses_ An array of the addresses of the allowed tokens.
-     * @return tokenSymbols_ An array of the symbols of the allowed tokens.
      */
-    function getTargetCompositionBPS() external view returns (uint256[] memory targetComposition_, address[] memory tokenAddresses_, string[] memory tokenSymbols_);
+    function getTargetCompositionBPS() external view returns (uint256[] memory targetComposition_, address[] memory tokenAddresses_);
 
 
     /**
-     * @notice Gets the current composition of the fund's assets, including token addresses and symbols.
-     * @dev Returns arrays for current weights (BPS), token addresses, and token symbols.
+     * @notice Gets the current composition of the fund's assets.
+     * @dev Returns arrays for current weights (BPS) and token addresses.
      * The order in all arrays corresponds to the order of tokens in the `allowedTokens` array.
      * @return currentComposition_ An array of current weights in basis points.
      * @return tokenAddresses_ An array of the addresses of the allowed tokens.
-     * @return tokenSymbols_ An array of the symbols of the allowed tokens.
      */
-    function getCurrentCompositionBPS() external view returns (uint256[] memory currentComposition_, address[] memory tokenAddresses_, string[] memory tokenSymbols_);
-    /**
-     * @notice Emergency function to withdraw ERC20 tokens
-     * @dev Only callable by owner, used in case of token airdrops or emergencies
-     * @param _tokenAddress Address of the token to withdraw
-     * @param _to Address to receive the withdrawn tokens
-     * @param _amount Amount of tokens to withdraw
-     */
-    function emergencyWithdrawERC20(address _tokenAddress, address _to, uint256 _amount) external;
-
-    /**
-     * @notice Emergency function to withdraw native ETH
-     * @dev Only callable by owner, used in case ETH is accidentally sent to the contract
-     * @param _to Address to receive the withdrawn ETH
-     * @param _amount Amount of ETH to withdraw
-     */
-    function emergencyWithdrawNative(address payable _to, uint256 _amount) external;
+    function getCurrentCompositionBPS() external view returns (uint256[] memory currentComposition_, address[] memory tokenAddresses_);
+    
 }
