@@ -196,13 +196,6 @@ interface IWhackRockFund {
     function targetWeights(address token) external view returns (uint256);
 
     /**
-     * @notice Checks if a token is allowed in the fund
-     * @param token Address of the token
-     * @return True if the token is allowed, false otherwise
-     */
-    function isAllowedTokenInternal(address token) external view returns (bool);
-
-    /**
      * @notice Returns the address receiving the agent's portion of AUM fees
      * @return Address of the agent AUM fee wallet
      */
