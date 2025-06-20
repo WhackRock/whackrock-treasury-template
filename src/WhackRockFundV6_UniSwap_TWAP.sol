@@ -21,6 +21,9 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import {IUniswapV3Router, IUniswapV3Quoter} from "./interfaces/IUniswapV3Router.sol";
+import {ISwapRouter} from "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import {IUniswapV3SwapCallback} from "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3SwapCallback.sol";
+import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {IAerodromeRouter} from "./interfaces/IRouter.sol";
 import {IWhackRockFund} from "./interfaces/IWhackRockFund.sol";
 import {UniswapV3TWAPOracle} from "./UniswapV3TWAPOracle.sol"; 
@@ -36,7 +39,7 @@ import {UniswapV3TWAPOracle} from "./UniswapV3TWAPOracle.sol";
  *      - Agent and protocol fee collection through share minting
  *      - DEX integration for asset swaps
  */
-contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle {
+contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, IUniswapV3SwapCallback {
     using SafeERC20 for IERC20;
 
     // Error codes to reduce bytecode size
@@ -727,19 +730,41 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle {
         
         uint256 amountOutMin = (expectedAmountOut * (TOTAL_WEIGHT_BASIS_POINTS - _slippageBps)) / TOTAL_WEIGHT_BASIS_POINTS;
 
-        IUniswapV3Router.ExactInputSingleParams memory params = IUniswapV3Router.ExactInputSingleParams({
-            tokenIn: _tokenIn,
-            tokenOut: _tokenOut,
-            fee: bestFee,
-            recipient: address(this),
-            deadline: block.timestamp + SWAP_DEADLINE_OFFSET,
-            amountIn: _amountIn,
-            amountOutMinimum: amountOutMin,
-            sqrtPriceLimitX96: 0
-        });
-
-        uint256 amountOut = uniswapV3Router.exactInputSingle(params);
-        emit FundTokenSwapped(_tokenIn, _amountIn, _tokenOut, amountOut);
+        // Get the pool for this token pair and fee
+        address pool = uniswapV3Factory.getPool(_tokenIn, _tokenOut, bestFee);
+        if (pool == address(0)) revert E6(); // Pool doesn't exist
+        
+        // Determine swap direction
+        bool zeroForOne = _tokenIn < _tokenOut;
+        
+        // Prepare callback data
+        bytes memory data = abi.encode(_tokenIn, _tokenOut, bestFee);
+        
+        // Calculate price limit to avoid "SPL" (Slippage Protection Limit) error
+        // Use the working price limits from our successful test
+        uint160 sqrtPriceLimitX96 = zeroForOne 
+            ? uint160(4295128740)  // MIN_SQRT_RATIO + 1 (working value)
+            : uint160(1461446703485210103287273052203988822378723970340); // MAX_SQRT_RATIO - 1 (working value)
+        
+        // Execute the swap directly with the pool
+        try IUniswapV3Pool(pool).swap(
+            address(this), // recipient
+            zeroForOne,
+            int256(_amountIn),
+            sqrtPriceLimitX96,
+            data
+        ) returns (int256 amount0, int256 amount1) {
+            uint256 amountOut = uint256(-(zeroForOne ? amount1 : amount0));
+            
+            // Check we received enough tokens
+            if (amountOut < amountOutMin) revert E6();
+            
+            emit FundTokenSwapped(_tokenIn, _amountIn, _tokenOut, amountOut);
+        } catch (bytes memory reason) {
+            // If swap fails, emit an event and revert with more context
+            emit SwapFailed(_tokenIn, _tokenOut, _amountIn, reason);
+            revert E6(); // Swap failed
+        }
     }
 
 
@@ -845,6 +870,43 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle {
         // Emitting RebalanceCheck here is more informative as it's called before deciding to rebalance.
         // The deposit/withdraw functions will also emit it.
         return (needsRebalance, maxDeviationBPS);
+    }
+
+    /**
+     * @notice Callback function required by Uniswap V3 for swap execution
+     * @dev This function is called by the Uniswap V3 pool during swap execution
+     * @param amount0Delta Change in token0 balance 
+     * @param amount1Delta Change in token1 balance
+     * @param data Encoded swap data
+     */
+    function uniswapV3SwapCallback(
+        int256 amount0Delta,
+        int256 amount1Delta,
+        bytes calldata data
+    ) external override {
+        require(amount0Delta > 0 || amount1Delta > 0, "Invalid swap");
+        
+        // Decode the data to get token addresses and fee
+        (address tokenIn, address tokenOut, uint24 fee) = abi.decode(data, (address, address, uint24));
+        
+        // Verify the callback is from a legitimate Uniswap V3 pool
+        address expectedPool = uniswapV3Factory.getPool(tokenIn, tokenOut, fee);
+        require(msg.sender == expectedPool, "Invalid callback sender");
+        
+        // Determine which token we need to pay and how much
+        address tokenToPay;
+        uint256 amountToPay;
+        
+        if (amount0Delta > 0) {
+            tokenToPay = tokenIn < tokenOut ? tokenIn : tokenOut;
+            amountToPay = uint256(amount0Delta);
+        } else {
+            tokenToPay = tokenIn < tokenOut ? tokenOut : tokenIn;
+            amountToPay = uint256(amount1Delta);
+        }
+        
+        // Transfer the required tokens to the pool
+        IERC20(tokenToPay).safeTransfer(msg.sender, amountToPay);
     }
 
     // Interface compatibility functions

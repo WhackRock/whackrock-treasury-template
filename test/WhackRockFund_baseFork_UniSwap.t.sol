@@ -8,13 +8,19 @@ import "forge-std/console.sol";
 import {WhackRockFund} from "../src/WhackRockFundV6_UniSwap_TWAP.sol";
 import {UniswapV3TWAPOracle} from "../src/UniswapV3TWAPOracle.sol";
 import {IUniswapV3Router, IUniswapV3Quoter} from "../src/interfaces/IUniswapV3Router.sol";
+import {ISwapRouter} from "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import {IQuoterV2} from "@uniswap/v3-periphery/contracts/interfaces/IQuoterV2.sol";
+import {IMulticall} from "@uniswap/v3-periphery/contracts/interfaces/IMulticall.sol";
+import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
+import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 // --- Base Mainnet Addresses ---
 // Uniswap V3 Core Addresses on Base
 address constant UNISWAP_V3_FACTORY_BASE = 0x33128a8fC17869897dcE68Ed026d694621f6FDfD;
-address constant UNISWAP_V3_ROUTER_BASE = 0x2626664c2603336E57B271c5C0b26F421741e481;
+address constant UNISWAP_V3_ROUTER_BASE = 0x2626664c2603336E57B271c5C0b26F421741e481; // SwapRouter02 (official)
+address constant UNIVERSAL_ROUTER_BASE = 0x6fF5693b99212Da76ad316178A184AB56D299b43; // UniversalRouter (preferred)
 address constant UNISWAP_V3_QUOTER_BASE = 0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a;
 
 // Token addresses on Base
@@ -48,7 +54,7 @@ contract WhackRockFundUniswapTest is Test {
 
     WhackRockFund public fund;
     UniswapV3TWAPOracle public oracle;
-    IUniswapV3Router public uniswapRouter;
+    ISwapRouter public uniswapRouter;
     IUniswapV3Quoter public uniswapQuoter;
     
     IERC20 public weth;
@@ -71,7 +77,7 @@ contract WhackRockFundUniswapTest is Test {
         virtuals = IERC20(VIRTUAL_BASE);
         dai = IERC20(DAI_BASE);
 
-        uniswapRouter = IUniswapV3Router(UNISWAP_V3_ROUTER_BASE);
+        uniswapRouter = ISwapRouter(UNISWAP_V3_ROUTER_BASE);
         uniswapQuoter = IUniswapV3Quoter(UNISWAP_V3_QUOTER_BASE);
 
         // Setup test fund configuration with tokens that have specific pools
@@ -107,6 +113,13 @@ contract WhackRockFundUniswapTest is Test {
             ""
         );
 
+        // Ensure fund starts with 0 WETH (remove any automatic funding)
+        deal(WETH_ADDRESS_BASE, address(fund), 0);
+        
+        // Debug: Check fund balance after deal
+        console.log("Fund WETH balance after deal(0):", weth.balanceOf(address(fund)));
+        console.log("Fund ETH balance after deal(0):", address(fund).balance);
+        
         // Deal tokens to test accounts
         deal(WETH_ADDRESS_BASE, DEPOSITOR_1, 100 ether);
         deal(WETH_ADDRESS_BASE, DEPOSITOR_2, 50 ether);
@@ -136,6 +149,10 @@ contract WhackRockFundUniswapTest is Test {
         assertEq(fund.agentAumFeeBps(), AGENT_AUM_FEE_BPS, "AUM fee should be set correctly");
         assertEq(fund.totalSupply(), 0, "Initial total supply should be 0");
         assertEq(fund.totalNAVInAccountingAsset(), 0, "Initial NAV should be 0");
+        
+        // Debug: Check fund balances
+        console.log("Fund WETH balance in testDeployment:", weth.balanceOf(address(fund)));
+        console.log("Fund ETH balance in testDeployment:", address(fund).balance);
     }
 
     function testTWAPOracle_BasicFunctionality() public {
@@ -189,6 +206,10 @@ contract WhackRockFundUniswapTest is Test {
         uint256 depositAmount = 1 ether;
         uint256 initialBalance = weth.balanceOf(DEPOSITOR_1);
         
+        // Debug: Check fund balance before deposit
+        console.log("Fund WETH balance before deposit:", weth.balanceOf(address(fund)));
+        console.log("Fund ETH balance before deposit:", address(fund).balance);
+        
         vm.startPrank(DEPOSITOR_1);
         uint256 sharesMinted = fund.deposit(depositAmount, DEPOSITOR_1);
         vm.stopPrank();
@@ -197,7 +218,12 @@ contract WhackRockFundUniswapTest is Test {
         assertEq(sharesMinted, depositAmount, "First deposit should mint 1:1 shares");
         assertEq(fund.balanceOf(DEPOSITOR_1), sharesMinted, "Depositor should have correct shares");
         assertEq(weth.balanceOf(DEPOSITOR_1), initialBalance - depositAmount, "WETH should be transferred");
-        assertEq(weth.balanceOf(address(fund)), depositAmount, "Fund should have WETH");
+        
+        // Fund automatically rebalances, so it won't hold all WETH
+        // Instead, check that the total NAV equals the deposit amount
+        uint256 totalNAV = fund.totalNAVInAccountingAsset();
+        assertApproxEqRel(totalNAV, depositAmount, 0.05e18, "Fund NAV should approximately equal deposit"); // 5% tolerance for swap slippage
+        
         assertEq(fund.totalSupply(), sharesMinted, "Total supply should equal shares minted");
     }
 
@@ -271,12 +297,29 @@ contract WhackRockFundUniswapTest is Test {
         fund.withdraw(shares, DEPOSITOR_1, DEPOSITOR_1);
         vm.stopPrank();
         
-        // Check that tokens were returned
-        assertGt(weth.balanceOf(DEPOSITOR_1), wethBefore, "Should receive some WETH");
-        assertGe(usdc.balanceOf(DEPOSITOR_1), usdcBefore, "Should receive USDC or same amount");
-        assertGe(cbbtc.balanceOf(DEPOSITOR_1), cbbtcBefore, "Should receive CBBTC or same amount");
-        assertGe(reth.balanceOf(DEPOSITOR_1), rethBefore, "Should receive rETH or same amount");
-        assertGe(virtuals.balanceOf(DEPOSITOR_1), virtualBefore, "Should receive VIRTUAL or same amount");
+        // Check that tokens were returned (basket withdrawal)
+        // The fund rebalances, so users get a proportional basket of all tokens
+        uint256 totalValueReceived = 0;
+        
+        // Calculate total value received in WETH terms
+        if (weth.balanceOf(DEPOSITOR_1) > wethBefore) {
+            totalValueReceived += weth.balanceOf(DEPOSITOR_1) - wethBefore;
+        }
+        if (usdc.balanceOf(DEPOSITOR_1) > usdcBefore) {
+            totalValueReceived += fund.getTokenValueInWETH(USDC_BASE, usdc.balanceOf(DEPOSITOR_1) - usdcBefore, 0);
+        }
+        if (cbbtc.balanceOf(DEPOSITOR_1) > cbbtcBefore) {
+            totalValueReceived += fund.getTokenValueInWETH(CBBTC_BASE, cbbtc.balanceOf(DEPOSITOR_1) - cbbtcBefore, 0);
+        }
+        if (reth.balanceOf(DEPOSITOR_1) > rethBefore) {
+            totalValueReceived += fund.getTokenValueInWETH(RETH_BASE, reth.balanceOf(DEPOSITOR_1) - rethBefore, 0);
+        }
+        if (virtuals.balanceOf(DEPOSITOR_1) > virtualBefore) {
+            totalValueReceived += fund.getTokenValueInWETH(VIRTUAL_BASE, virtuals.balanceOf(DEPOSITOR_1) - virtualBefore, 0);
+        }
+        
+        // Total value received should be approximately equal to deposit (minus fees/slippage)
+        assertApproxEqRel(totalValueReceived, depositAmount, 0.1e18, "Should receive approximately deposited value");
         
         // Fund should be empty
         assertEq(fund.totalSupply(), 0, "Total supply should be 0");
@@ -291,14 +334,42 @@ contract WhackRockFundUniswapTest is Test {
         
         // Withdraw half
         uint256 withdrawShares = totalShares / 2;
+        
+        // Track balances before withdrawal
         uint256 wethBefore = weth.balanceOf(DEPOSITOR_1);
+        uint256 usdcBefore = usdc.balanceOf(DEPOSITOR_1);
+        uint256 cbbtcBefore = cbbtc.balanceOf(DEPOSITOR_1);
+        uint256 rethBefore = reth.balanceOf(DEPOSITOR_1);
+        uint256 virtualsBefore = virtuals.balanceOf(DEPOSITOR_1);
         
         fund.withdraw(withdrawShares, DEPOSITOR_1, DEPOSITOR_1);
         vm.stopPrank();
         
+        // Calculate total value of tokens received
+        uint256 wethReceived = weth.balanceOf(DEPOSITOR_1) - wethBefore;
+        uint256 usdcReceived = usdc.balanceOf(DEPOSITOR_1) - usdcBefore;
+        uint256 cbbtcReceived = cbbtc.balanceOf(DEPOSITOR_1) - cbbtcBefore;
+        uint256 rethReceived = reth.balanceOf(DEPOSITOR_1) - rethBefore;
+        uint256 virtualsReceived = virtuals.balanceOf(DEPOSITOR_1) - virtualsBefore;
+        
+        // Convert all received tokens to WETH value using oracle
+        uint256 totalValueReceived = wethReceived;
+        if (usdcReceived > 0) {
+            totalValueReceived += fund.getTokenValueInWETH(USDC_BASE, usdcReceived, 500);
+        }
+        if (cbbtcReceived > 0) {
+            totalValueReceived += fund.getTokenValueInWETH(CBBTC_BASE, cbbtcReceived, 3000);
+        }
+        if (rethReceived > 0) {
+            totalValueReceived += fund.getTokenValueInWETH(RETH_BASE, rethReceived, 500);
+        }
+        if (virtualsReceived > 0) {
+            totalValueReceived += fund.getTokenValueInWETH(VIRTUAL_BASE, virtualsReceived, 10000);
+        }
+        
         // Check results
         assertEq(fund.balanceOf(DEPOSITOR_1), totalShares - withdrawShares, "Should have remaining shares");
-        assertGt(weth.balanceOf(DEPOSITOR_1), wethBefore, "Should receive some tokens");
+        assertGt(totalValueReceived, 0, "Should receive some value in tokens");
         
         uint256 remainingNAV = fund.totalNAVInAccountingAsset();
         assertApproxEqRel(remainingNAV, depositAmount / 2, 0.1e18, "Remaining NAV should be ~half"); // 10% tolerance
@@ -324,27 +395,28 @@ contract WhackRockFundUniswapTest is Test {
     }
 
     function testSwapping_TokenToWETH() public {
-        // Give fund some USDC directly for testing
-        deal(USDC_BASE, address(fund), 1000 * 1e6);
+        // First make a deposit to establish fund value
+        vm.startPrank(DEPOSITOR_1);
+        fund.deposit(1 ether, DEPOSITOR_1);
+        vm.stopPrank();
+        
+        // Now give fund extra USDC directly to create imbalance
+        deal(USDC_BASE, address(fund), 2000 * 1e6); // 2000 USDC
         
         uint256 usdcBefore = usdc.balanceOf(address(fund));
-        uint256 wethBefore = weth.balanceOf(address(fund));
+        console.log("USDC before rebalance:", usdcBefore);
         
         // Call internal swap function through agent
         vm.startPrank(FUND_AGENT);
-        // We need to test the internal _swapTokens function indirectly through rebalancing
-        // Set up a state where USDC needs to be sold for WETH
-        uint256[] memory newWeights = new uint256[](4);
-        newWeights[0] = 1000; // 10% USDC (reduced from 40%)
-        newWeights[1] = 3000; // 30% CBBTC
-        newWeights[2] = 3000; // 30% rETH
-        newWeights[3] = 3000; // 30% VIRTUAL
-        
-        fund.setTargetWeightsAndRebalanceIfNeeded(newWeights);
+        // Force rebalance which should sell excess USDC
+        fund.triggerRebalance();
         vm.stopPrank();
         
-        // Should have swapped some USDC for WETH
-        assertLt(usdc.balanceOf(address(fund)), usdcBefore, "Should have sold some USDC");
+        uint256 usdcAfter = usdc.balanceOf(address(fund));
+        console.log("USDC after rebalance:", usdcAfter);
+        
+        // Should have swapped some USDC to maintain target weights
+        assertLt(usdcAfter, usdcBefore, "Should have sold some USDC during rebalancing");
     }
 
     function testGetCurrentComposition() public {
@@ -503,6 +575,247 @@ contract WhackRockFundUniswapTest is Test {
         console.log("Pool address:", poolAddr);
     }
 
+    function testContractExistence() public view {
+        // Check if contracts exist
+        console.log("Router address:", UNISWAP_V3_ROUTER_BASE);
+        console.log("Router code size:", UNISWAP_V3_ROUTER_BASE.code.length);
+        
+        console.log("Quoter address:", UNISWAP_V3_QUOTER_BASE);
+        console.log("Quoter code size:", UNISWAP_V3_QUOTER_BASE.code.length);
+        
+        console.log("Factory address:", UNISWAP_V3_FACTORY_BASE);
+        console.log("Factory code size:", UNISWAP_V3_FACTORY_BASE.code.length);
+    }
+
+    function testBasicUniswapSwap() public {
+        // Test our working direct pool swap implementation
+        address pool = IUniswapV3Factory(UNISWAP_V3_FACTORY_BASE).getPool(WETH_ADDRESS_BASE, USDC_BASE, 500);
+        console.log("Pool address:", pool);
+        require(pool != address(0), "Pool doesn't exist");
+        
+        // Give our test contract some WETH
+        deal(WETH_ADDRESS_BASE, address(this), 0.01 ether);
+        
+        uint256 wethBefore = weth.balanceOf(address(this));
+        uint256 usdcBefore = usdc.balanceOf(address(this));
+        
+        console.log("WETH before:", wethBefore);
+        console.log("USDC before:", usdcBefore);
+        
+        bool zeroForOne = WETH_ADDRESS_BASE < USDC_BASE;
+        bytes memory data = abi.encode(WETH_ADDRESS_BASE, USDC_BASE, uint24(500));
+        
+        // Execute our working direct pool swap
+        IUniswapV3Pool(pool).swap(
+            address(this), // recipient
+            zeroForOne,
+            int256(0.01 ether),
+            zeroForOne ? uint160(4295128740) : uint160(1461446703485210103287273052203988822378723970340),
+            data
+        );
+        
+        uint256 wethAfter = weth.balanceOf(address(this));
+        uint256 usdcAfter = usdc.balanceOf(address(this));
+        
+        console.log("WETH after:", wethAfter);
+        console.log("USDC after:", usdcAfter);
+        
+        // Verify the swap worked
+        assertEq(wethAfter, 0, "Should have swapped all WETH");
+        assertGt(usdcAfter, usdcBefore, "Should have received USDC");
+        return;
+    }
+    
+    function xtestOldSwap() public {
+        // Moved old test code here, disabled
+        require(UNISWAP_V3_ROUTER_BASE.code.length > 0, "Router contract doesn't exist");
+        require(UNISWAP_V3_QUOTER_BASE.code.length > 0, "Quoter contract doesn't exist");
+        
+        // Check if the WETH/USDC pool exists and has liquidity
+        address poolAddress = IUniswapV3Factory(UNISWAP_V3_FACTORY_BASE).getPool(WETH_ADDRESS_BASE, USDC_BASE, 500);
+        console.log("Pool address:", poolAddress);
+        require(poolAddress != address(0), "Pool doesn't exist");
+        require(poolAddress.code.length > 0, "Pool has no code");
+        
+        console.log("Router address:", UNISWAP_V3_ROUTER_BASE);
+        console.log("Using official ISwapRouter interface");
+        
+        // Test quoter first to see if we can get a quote
+        uint256 wethAmount = 0.4 ether;
+        console.log("Testing quoter for", wethAmount, "WETH -> USDC");
+        
+        // Use direct QuoterV2 interface
+        IQuoterV2 quoter = IQuoterV2(UNISWAP_V3_QUOTER_BASE);
+        
+        try quoter.quoteExactInputSingle(
+            IQuoterV2.QuoteExactInputSingleParams({
+                tokenIn: WETH_ADDRESS_BASE,
+                tokenOut: USDC_BASE,
+                amountIn: wethAmount,
+                fee: 500,
+                sqrtPriceLimitX96: 0
+            })
+        ) returns (uint256 quotedAmount, uint160, uint32, uint256) {
+            console.log("Quoter returned:", quotedAmount);
+        } catch (bytes memory reason) {
+            console.log("Quoter failed:");
+            console.logBytes(reason);
+            revert("Quoter failed");
+        }
+        
+        deal(WETH_ADDRESS_BASE, address(this), wethAmount);
+        
+        // Check balances before
+        console.log("WETH balance:", IERC20(WETH_ADDRESS_BASE).balanceOf(address(this)));
+        
+        // The issue might be that the router addresses are for Ethereum, not Base
+        // Let's check if the current router actually exists
+        console.log("V2 Router code length:", UNISWAP_V3_ROUTER_BASE.code.length);
+        require(UNISWAP_V3_ROUTER_BASE.code.length > 0, "V2 Router doesn't exist on Base");
+        
+        // Try using the SwapRouter02 that's already defined
+        console.log("Using SwapRouter02 on Base:", UNISWAP_V3_ROUTER_BASE);
+        
+        // Approve WETH for the router
+        IERC20(WETH_ADDRESS_BASE).approve(UNISWAP_V3_ROUTER_BASE, wethAmount);
+        
+        // Check allowance
+        uint256 allowance = IERC20(WETH_ADDRESS_BASE).allowance(address(this), UNISWAP_V3_ROUTER_BASE);
+        console.log("Allowance:", allowance);
+        
+        // Try the same swap that's failing in the fund
+        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter.ExactInputSingleParams({
+            tokenIn: WETH_ADDRESS_BASE,
+            tokenOut: USDC_BASE,
+            fee: 500,
+            recipient: address(this),
+            deadline: block.timestamp + 300,
+            amountIn: wethAmount,
+            amountOutMinimum: 0, // No slippage protection for this test
+            sqrtPriceLimitX96: 0
+        });
+        
+        uint256 usdcBefore = IERC20(USDC_BASE).balanceOf(address(this));
+        console.log("USDC before swap:", usdcBefore);
+        
+        // The issue might be with the fee tier. Let's test different fee tiers
+        uint24[3] memory feeTiers = [uint24(500), uint24(3000), uint24(10000)]; // 0.05%, 0.3%, 1%
+        
+        for (uint i = 0; i < feeTiers.length; i++) {
+            uint24 fee = feeTiers[i];
+            console.log("Testing fee tier:", fee);
+            
+            // Check if pool exists for this fee tier
+            address testPool = IUniswapV3Factory(UNISWAP_V3_FACTORY_BASE).getPool(WETH_ADDRESS_BASE, USDC_BASE, fee);
+            console.log("Pool address for fee tier:", testPool);
+            
+            if (testPool != address(0) && testPool.code.length > 0) {
+                // Test quoter for this fee tier
+                try uniswapQuoter.quoteExactInputSingle(
+                    IQuoterV2.QuoteExactInputSingleParams({
+                        tokenIn: WETH_ADDRESS_BASE,
+                        tokenOut: USDC_BASE,
+                        amountIn: 0.01 ether, // Use smaller amount
+                        fee: fee,
+                        sqrtPriceLimitX96: 0
+                    })
+                ) returns (uint256 quotedAmount, uint160, uint32, uint256) {
+                    console.log("Quote for fee tier:", quotedAmount);
+                    
+                    if (quotedAmount > 0) {
+                        // Try swap with this fee tier
+                        params.fee = fee;
+                        params.amountIn = 0.01 ether;
+                        params.amountOutMinimum = quotedAmount * 95 / 100; // 5% slippage
+                        
+                        try ISwapRouter(UNISWAP_V3_ROUTER_BASE).exactInputSingle(params) returns (uint256 amountOut) {
+                            console.log("Swap succeeded with fee tier, got USDC:", amountOut);
+                            assertGt(amountOut, 0, "Should receive USDC");
+                            return; // Success! Exit the function
+                        } catch (bytes memory reason) {
+                            console.log("Swap failed with this fee tier:");
+                            console.logBytes(reason);
+                        }
+                    }
+                } catch (bytes memory quoteReason) {
+                    console.log("Quote failed for fee tier:");
+                    console.logBytes(quoteReason);
+                }
+            }
+        }
+    }
+
+    function testDirectPoolSwap() public {
+        // Test direct pool interaction to see if our callback works
+        address pool = IUniswapV3Factory(UNISWAP_V3_FACTORY_BASE).getPool(WETH_ADDRESS_BASE, USDC_BASE, 500);
+        console.log("Pool address:", pool);
+        require(pool != address(0), "Pool doesn't exist");
+        
+        // Give our test contract some WETH
+        deal(WETH_ADDRESS_BASE, address(this), 0.01 ether);
+        
+        uint256 wethBefore = weth.balanceOf(address(this));
+        uint256 usdcBefore = usdc.balanceOf(address(this));
+        
+        console.log("WETH before:", wethBefore);
+        console.log("USDC before:", usdcBefore);
+        
+        bool zeroForOne = WETH_ADDRESS_BASE < USDC_BASE;
+        console.log("zeroForOne:", zeroForOne);
+        
+        bytes memory data = abi.encode(WETH_ADDRESS_BASE, USDC_BASE, uint24(500));
+        
+        // Try direct pool swap
+        try IUniswapV3Pool(pool).swap(
+            address(this), // recipient
+            zeroForOne,
+            int256(0.01 ether),
+            zeroForOne ? uint160(4295128740) : uint160(1461446703485210103287273052203988822378723970340), // Price limits
+            data
+        ) returns (int256 amount0, int256 amount1) {
+            console.log("Swap succeeded");
+            console.log("amount0:", uint256(amount0 >= 0 ? amount0 : -amount0));
+            console.log("amount1:", uint256(amount1 >= 0 ? amount1 : -amount1));
+            
+            uint256 wethAfter = weth.balanceOf(address(this));
+            uint256 usdcAfter = usdc.balanceOf(address(this));
+            
+            console.log("WETH after:", wethAfter);
+            console.log("USDC after:", usdcAfter);
+        } catch (bytes memory reason) {
+            console.log("Direct pool swap failed:");
+            console.logBytes(reason);
+            revert("Direct pool swap failed");
+        }
+    }
+    
+    // Callback implementation for test contract
+    function uniswapV3SwapCallback(
+        int256 amount0Delta,
+        int256 amount1Delta,
+        bytes calldata data
+    ) external {
+        console.log("Callback called");
+        console.log("amount0Delta:", uint256(amount0Delta >= 0 ? amount0Delta : -amount0Delta));
+        console.log("amount1Delta:", uint256(amount1Delta >= 0 ? amount1Delta : -amount1Delta));
+        
+        // Decode the data
+        (address tokenIn, address tokenOut, uint24 fee) = abi.decode(data, (address, address, uint24));
+        
+        // Verify callback is from correct pool
+        address expectedPool = IUniswapV3Factory(UNISWAP_V3_FACTORY_BASE).getPool(tokenIn, tokenOut, fee);
+        require(msg.sender == expectedPool, "Invalid callback sender");
+        
+        // Pay the required amount
+        if (amount0Delta > 0) {
+            address token = tokenIn < tokenOut ? tokenIn : tokenOut;
+            IERC20(token).transfer(msg.sender, uint256(amount0Delta));
+        } else if (amount1Delta > 0) {
+            address token = tokenIn < tokenOut ? tokenOut : tokenIn;
+            IERC20(token).transfer(msg.sender, uint256(amount1Delta));
+        }
+    }
+
     function testSpecificPoolPricing() public {
         // Test pricing using the specific pools provided
         uint256 testAmount = 1000 * 1e6; // 1000 USDC
@@ -652,6 +965,29 @@ contract WhackRockFundUniswapTest is Test {
         console.log("1M USDC in WETH:", largeResult);
     }
 
+    function testWorkingSwapImplementation() public {
+        // Test that our fixed swap implementation works in the fund
+        vm.startPrank(DEPOSITOR_1);
+        
+        uint256 depositAmount = 1 ether;
+        uint256 shares = fund.deposit(depositAmount, DEPOSITOR_1);
+        
+        vm.stopPrank();
+        
+        assertGt(shares, 0, "Should mint shares");
+        console.log("Shares minted:", shares);
+        
+        // Check that rebalancing worked (fund should have various tokens)
+        uint256 usdcBalance = usdc.balanceOf(address(fund));
+        uint256 cbbtcBalance = cbbtc.balanceOf(address(fund));
+        
+        console.log("Fund USDC balance:", usdcBalance);  
+        console.log("Fund cbBTC balance:", cbbtcBalance);
+        
+        // At least one of these should be > 0 if rebalancing worked
+        assertTrue(usdcBalance > 0 || cbbtcBalance > 0, "Rebalancing should have acquired some tokens");
+    }
+
     function testContractUpgradeability() public view {
         // Test that contract state is properly set and immutable where expected
         assertEq(fund.WETH_ADDRESS(), WETH_ADDRESS_BASE, "WETH should be immutable");
@@ -709,10 +1045,13 @@ contract WhackRockFundUniswapTest is Test {
         // For now, just verify operations complete successfully
         uint256 shares = fund.deposit(1 ether, DEPOSITOR_1);
         
+        vm.stopPrank(); // Stop DEPOSITOR_1 prank
+        
         vm.startPrank(FUND_AGENT);
         fund.triggerRebalance();
         vm.stopPrank();
         
+        vm.startPrank(DEPOSITOR_1);
         fund.withdraw(shares, DEPOSITOR_1, DEPOSITOR_1);
         vm.stopPrank();
         

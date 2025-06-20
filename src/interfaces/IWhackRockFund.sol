@@ -88,6 +88,20 @@ interface IWhackRockFund {
         uint256 amountTo
     );
     
+    /**
+     * @notice Emitted when a token swap fails
+     * @param tokenFrom Address of the token being sold
+     * @param tokenTo Address of the token being bought  
+     * @param amountIn Amount of tokenFrom attempted to swap
+     * @param reason Failure reason bytes
+     */
+    event SwapFailed(
+        address indexed tokenFrom,
+        address indexed tokenTo,
+        uint256 amountIn,
+        bytes reason
+    );
+    
     
     /**
      * @notice Emitted when WETH is deposited and shares are minted
