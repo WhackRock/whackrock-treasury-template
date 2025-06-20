@@ -129,7 +129,7 @@ if ($LASTEXITCODE -eq 0) {
                 Write-Host "Debug: Showing all transactions in broadcast file:" -ForegroundColor Yellow
                 $txIndex = 0
                 foreach ($tx in $broadcastContent.transactions) {
-                    Write-Host "Transaction $txIndex:" -ForegroundColor Gray
+                    Write-Host "Transaction ${txIndex}:" -ForegroundColor Gray
                     Write-Host "  Contract Name: $($tx.contractName)" -ForegroundColor Gray
                     Write-Host "  Contract Address: $($tx.contractAddress)" -ForegroundColor Gray
                     Write-Host "  Function: $($tx.function)" -ForegroundColor Gray
@@ -314,7 +314,7 @@ if ($LASTEXITCODE -eq 0) {
                             foreach ($tx in $logContent.transactions) {
                                 if ($tx.contractName -eq "WhackRockFund" -and $tx.contractAddress) {
                                     $fundAddress = $tx.contractAddress
-                                    Write-Host "Found WhackRockFund in $($logFile.Name): $fundAddress" -ForegroundColor Green
+                                    Write-Host "Found WhackRockFund in $($logFile.Name) at address: $fundAddress" -ForegroundColor Green
                                     break
                                 }
                             }
