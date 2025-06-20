@@ -127,6 +127,7 @@ interface IWhackRockFundRegistry {
      * @param _initialAgent The address of the agent that will manage the new fund
      * @param _fundAllowedTokens An array of token addresses the fund can hold (must be from the registry's allowlist)
      * @param _initialTargetWeights Corresponding target weights for _fundAllowedTokens (sum must be 10000 BPS)
+     * @param _poolAddresses Array of Aerodrome pool addresses for TWAP oracle (one for each allowed token)
      * @param _vaultName Name for the new fund's ERC20 shares
      * @param _vaultSymbol Symbol for the new fund's ERC20 shares (must be unique)
      * @param _vaultURI URI for the new fund's ERC20 shares
@@ -139,6 +140,7 @@ interface IWhackRockFundRegistry {
         address _initialAgent,
         address[] memory _fundAllowedTokens,
         uint256[] memory _initialTargetWeights,
+        address[] memory _poolAddresses,
         string memory _vaultName,
         string memory _vaultSymbol,
         string memory _vaultURI,

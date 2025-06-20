@@ -26,7 +26,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {IAerodromeRouter} from "./interfaces/IRouter.sol"; 
 import {IWhackRockFundRegistry} from "./interfaces/IWhackRockFundRegistry.sol";
-import {WhackRockFund} from "./WhackRockFundV6_Aerodrome.sol"; 
+import {WhackRockFund} from "./WhackRockFundV6_Aerodrome_TWAP.sol"; 
 
 /**
  * @title WhackRockFundRegistry
@@ -260,6 +260,7 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
      * @param _initialAgent Address of the initial agent managing the fund
      * @param _fundAllowedTokens Array of allowed token addresses for the fund
      * @param _initialTargetWeights Array of target weights for each allowed token
+     * @param _poolAddresses Array of Aerodrome pool addresses for TWAP oracle (one for each allowed token)
      * @param _vaultName Name of the fund's ERC20 token
      * @param _vaultSymbol Symbol of the fund's ERC20 token
      * @param _agentAumFeeWalletForFund Address receiving the agent's portion of AUM fees
@@ -270,6 +271,7 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
         address _initialAgent,
         address[] memory _fundAllowedTokens,
         uint256[] memory _initialTargetWeights,
+        address[] memory _poolAddresses,
         string memory _vaultName,
         string memory _vaultSymbol,
         string memory _vaultURI,
@@ -279,6 +281,7 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
     ) external override returns (address fundAddress) {
         require(_fundAllowedTokens.length > 0, "Registry: Fund must have at least one token");
         require(_fundAllowedTokens.length <= maxInitialAllowedTokensLength, "Registry: Exceeds max fund tokens");
+        require(_fundAllowedTokens.length == _poolAddresses.length, "Registry: Pool addresses length mismatch");
         require(bytes(_vaultSymbol).length > 0, "Registry: Vault symbol cannot be empty");
         require(!isSymbolTaken[_vaultSymbol], "Registry: Vault symbol already taken");
         require(_agentAumFeeWalletForFund != address(0), "Registry: Agent AUM fee wallet zero");
@@ -286,6 +289,7 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
 
         for (uint i = 0; i < _fundAllowedTokens.length; i++) {
             require(isTokenAllowedInRegistry[_fundAllowedTokens[i]], "Registry: Fund token not allowed");
+            require(_poolAddresses[i] != address(0), "Registry: Pool address cannot be zero");
         }
 
         if (protocolFundCreationFeeUsdcAmount > 0) {
@@ -299,14 +303,15 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
             address(aerodromeRouter),
             _fundAllowedTokens,
             _initialTargetWeights,
+            _poolAddresses,
             _vaultName,
             _vaultSymbol,
             _vaultURI,
+            _description,
             _agentAumFeeWalletForFund,     
             _agentSetTotalAumFeeBps,       
             protocolAumFeeRecipientForFunds,
-            address(USDC_TOKEN),
-            new bytes(0)
+            address(USDC_TOKEN)
         );
         fundAddress = address(newFund);
 

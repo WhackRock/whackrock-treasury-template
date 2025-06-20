@@ -6,7 +6,7 @@ import "forge-std/console.sol";
 
 // Adjust import paths based on your project structure
 import {WhackRockFundRegistry, IWhackRockFundRegistry} from "../src/WhackRockFundRegistry.sol"; // Assuming this is your UUPS upgradeable registry
-import {WhackRockFund} from "../src/WhackRockFundV5_ERC4626_Aerodrome_SubGEvents.sol"; 
+import {WhackRockFund} from "../src/WhackRockFundV6_Aerodrome_TWAP.sol"; 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IAerodromeRouter} from "../src/interfaces/IRouter.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -24,6 +24,11 @@ address constant USDC_BASE = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // USDC
 address constant CBBTC_BASE = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf; 
 address constant VIRTU_BASE = 0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b;
 address constant ANOTHER_TOKEN_BASE = 0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA; // Example: DAI on Base
+
+// --- Aerodrome Pool Addresses for TWAP Oracle (BASE MAINNET) ---
+address constant USDC_WETH_POOL = 0x608E57164e89c411131F37b7d5c95659Cc1D6E70; // USDC/WETH pool
+address constant CBBTC_WETH_POOL = 0xF10D826371f7d25897a1221432A91C96b8f27332; // CBBTC/WETH pool
+address constant VIRTU_WETH_POOL = 0xACB58DE7374Ce0d00C103af3EcB02A76F8ac4e70; // VIRTU/WETH pool
 
 // Test accounts
 address constant REGISTRY_OWNER = address(0x1000);
@@ -131,6 +136,10 @@ contract WhackRockFundRegistryTest is Test {
         fundWeights[0] = 5000;
         fundWeights[1] = 5000;
 
+        address[] memory poolAddresses = new address[](2);
+        poolAddresses[0] = CBBTC_WETH_POOL;
+        poolAddresses[1] = VIRTU_WETH_POOL;
+
         string memory vaultName = "MyFirstFund";
         string memory vaultSymbol = "MFF";
 
@@ -147,6 +156,7 @@ contract WhackRockFundRegistryTest is Test {
             TEST_AGENT,
             fundTokens,
             fundWeights,
+            poolAddresses,
             vaultName,
             vaultSymbol,
             "TEST_URI",
@@ -181,14 +191,16 @@ contract WhackRockFundRegistryTest is Test {
         fundTokens[0] = USDC_BASE;
         uint256[] memory fundWeights = new uint256[](1);
         fundWeights[0] = 10000;
+        address[] memory poolAddresses = new address[](1);
+        poolAddresses[0] = USDC_WETH_POOL;
         usdcToken.approve(address(registryProxy), PROTOCOL_CREATION_FEE_USDC);
-        registryProxy.createWhackRockFund(TEST_AGENT, fundTokens, fundWeights, "FundOne", "FONE", "FONE", "test description", TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND);
+        registryProxy.createWhackRockFund(TEST_AGENT, fundTokens, fundWeights, poolAddresses, "FundOne", "FONE", "FONE", "test description", TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND);
         vm.stopPrank();
 
         vm.startPrank(FUND_CREATOR_2);
         usdcToken.approve(address(registryProxy), PROTOCOL_CREATION_FEE_USDC);
         vm.expectRevert("Registry: Vault symbol already taken");
-        registryProxy.createWhackRockFund(TEST_AGENT, fundTokens, fundWeights, "FundTwo", "FONE","FONE", "test description",TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND);
+        registryProxy.createWhackRockFund(TEST_AGENT, fundTokens, fundWeights, poolAddresses, "FundTwo", "FONE","FONE", "test description",TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND);
         vm.stopPrank();
     }
     
@@ -209,10 +221,12 @@ contract WhackRockFundRegistryTest is Test {
         fundTokens[0] = USDC_BASE;
         uint256[] memory fundWeights = new uint256[](1);
         fundWeights[0] = 10000;
+        address[] memory poolAddresses = new address[](1);
+        poolAddresses[0] = USDC_WETH_POOL;
         
         usdcToken.approve(address(registryProxy), PROTOCOL_CREATION_FEE_USDC);
         address fundAddr = registryProxy.createWhackRockFund(
-            TEST_AGENT, fundTokens, fundWeights, "GetterFund", "GF", "GF_uri", "test description",
+            TEST_AGENT, fundTokens, fundWeights, poolAddresses, "GetterFund", "GF", "GF_uri", "test description",
             TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND
         );
         vm.stopPrank();

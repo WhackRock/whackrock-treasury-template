@@ -11,7 +11,7 @@ import {IERC20} from '@openzeppelin/contracts/interfaces/IERC20.sol';
 import {ERC20} from '@openzeppelin/contracts/token/ERC20/ERC20.sol';
 // Assuming IWhackRockFund interface is defined if needed, or WhackRockFund itself is used.
 import {IWhackRockFund} from "../src/interfaces/IWhackRockFund.sol";
-import {WhackRockFund} from "../src/WhackRockFundV6_Aerodrome.sol";
+import {WhackRockFund} from "../src/WhackRockFundV6_Aerodrome_TWAP.sol";
 
 
 
@@ -23,6 +23,13 @@ address constant USDC_BASE = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // 6 de
 address constant CBBTC_BASE = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf; // 18 decimals (matching trace)
 address constant VIRTU_BASE = 0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b; // 18 decimals
 address constant NON_ALLOWED_TOKEN_EXAMPLE = 0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA; // DAI 18 decimals
+
+// --- Aerodrome Pool Addresses for TWAP Oracle (BASE MAINNET) ---
+// These are example pool addresses - in production, you would need to verify the actual pool addresses
+// for each token pair on Aerodrome
+address constant USDC_WETH_POOL = 0x608E57164e89c411131F37b7d5c95659Cc1D6E70; // USDC/WETH pool
+address constant CBBTC_WETH_POOL = 0xF10D826371f7d25897a1221432A91C96b8f27332; // CBBTC/WETH pool
+address constant VIRTU_WETH_POOL = 0xACB58DE7374Ce0d00C103af3EcB02A76F8ac4e70; // VIRTU/WETH pool
 
 address constant TEST_OWNER = address(0x1000);
 address constant TEST_AGENT = address(0x2000);
@@ -56,13 +63,16 @@ contract WhackRockFundTest is Test {
     IERC20 public tokenB_CBBTC = IERC20(CBBTC_BASE);
     IERC20 public tokenC_VIRTU = IERC20(VIRTU_BASE);
 
-    // Error codes from WhackRockFundV5_ERC4626_Aerodrome_SubGEvents.sol
+    // Error codes from WhackRockFundV6_Aerodrome_TWAP.sol
     error E1(); // Zero address
     error E2(); // Invalid amount/length
     error E3(); // Insufficient balance
     error E4(); // Unauthorized
     error E5(); // Invalid state
-    error E6(); // Swap failed
+    error E6(); // Swap or Price Query Failed
+    error E7(); // Invalid Pool for token pair
+    error E8(); // Oracle update failed
+    error E9(); // TWAP update period has not elapsed
 
     address public defaultAerodromeFactory;
 
@@ -102,6 +112,11 @@ contract WhackRockFundTest is Test {
         initialTargetWeights[1] = 4000; // 40% CBBTC
         initialTargetWeights[2] = 2000; // 20% VIRTU
 
+        address[] memory poolAddresses = new address[](3);
+        poolAddresses[0] = USDC_WETH_POOL;
+        poolAddresses[1] = CBBTC_WETH_POOL;
+        poolAddresses[2] = VIRTU_WETH_POOL;
+
         vm.startPrank(TEST_OWNER);
         whackRockFund = new WhackRockFund(
             TEST_OWNER,
@@ -109,14 +124,15 @@ contract WhackRockFundTest is Test {
             AERODROME_ROUTER_ADDRESS_BASE,
             initialAllowedTokens,
             initialTargetWeights,
+            poolAddresses,
             "WhackRock Test Vault",
             "WRTV",
             "https://x.com/WRTV",
+            "Test WhackRock Fund",
             TEST_AGENT_AUM_FEE_WALLET,
             TEST_TOTAL_AUM_FEE_BPS,
             TEST_PROTOCOL_AUM_RECIPIENT,
-            address(USDC_BASE),
-            new bytes(0) 
+            address(USDC_BASE)
         );
         vm.stopPrank();
 
@@ -128,8 +144,8 @@ contract WhackRockFundTest is Test {
         assertEq(whackRockFund.owner(), TEST_OWNER);
         assertEq(whackRockFund.agent(), TEST_AGENT);
         assertEq(whackRockFund.ACCOUNTING_ASSET(), WETH_ADDRESS_BASE);
-        assertTrue(whackRockFund.isAllowedTokenInternal(USDC_BASE));
-        assertTrue(whackRockFund.isAllowedTokenInternal(VIRTU_BASE));
+        // isAllowedTokenInternal is no longer public in V6
+        // Token allowance is verified by successful deployment
         assertEq(whackRockFund.agentAumFeeWallet(), TEST_AGENT_AUM_FEE_WALLET);
         assertEq(whackRockFund.agentAumFeeBps(), TEST_TOTAL_AUM_FEE_BPS);
         assertEq(whackRockFund.protocolAumFeeRecipient(), TEST_PROTOCOL_AUM_RECIPIENT);
@@ -264,7 +280,7 @@ contract WhackRockFundTest is Test {
             initialTotalShares, // totalSharesAtFeeCalculation
             block.timestamp + oneYearInSeconds
         );
-        vm.prank(TEST_OWNER);
+        vm.prank(TEST_AGENT);
         whackRockFund.collectAgentManagementFee();
 
         assertApproxEqAbs(whackRockFund.balanceOf(TEST_AGENT_AUM_FEE_WALLET), expectedAgentShares_calc, expectedAgentShares_calc / 1000 + 1); 
@@ -298,7 +314,7 @@ contract WhackRockFundTest is Test {
                 block.timestamp + 1
             );
         }
-        vm.prank(TEST_OWNER);
+        vm.prank(TEST_AGENT);
         whackRockFund.collectAgentManagementFee(); 
         
         assertApproxEqAbs(whackRockFund.balanceOf(TEST_AGENT_AUM_FEE_WALLET), agentSharesBeforeSecondCall + expectedAgentSharesFor1Sec, expectedAgentSharesFor1Sec / 1000 + 2); 
@@ -795,14 +811,20 @@ contract WhackRockFundTest is Test {
         initialWeights[0] = 6000;
         initialWeights[1] = 4000;
 
+        // Create pool addresses for the local tokens (mock addresses for testing)
+        address[] memory localPoolAddresses = new address[](2);
+        localPoolAddresses[0] = address(0x1111); // Mock pool for NoSymbolToken/WETH
+        localPoolAddresses[1] = address(0x2222); // Mock pool for StandardToken/WETH
+
         vm.startPrank(TEST_OWNER);
         WhackRockFund localFund = new WhackRockFund(
             TEST_OWNER, TEST_AGENT, AERODROME_ROUTER_ADDRESS_BASE,
-            initialTokens, initialWeights, "Local Fund NoSymbol", "LFNS",
+            initialTokens, initialWeights, localPoolAddresses,
+            "Local Fund NoSymbol", "LFNS",
             "https://x.com/LFNS",
+            "Test Local Fund",
             TEST_AGENT_AUM_FEE_WALLET, TEST_TOTAL_AUM_FEE_BPS, TEST_PROTOCOL_AUM_RECIPIENT,
-            USDC_BASE, // Mainnet USDC for _usdcAddress param
-            new bytes(0)
+            USDC_BASE // Mainnet USDC for _usdcAddress param
         );
         vm.stopPrank();
 

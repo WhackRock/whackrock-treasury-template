@@ -27,6 +27,12 @@ contract DeployWhackRockFundRegistry is Script {
     address constant AIXBT_BASE = 0x4F9Fd6Be4a90f2620860d680c0d4d5Fb53d1A825; 
     address constant wstETH_BASE = 0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452; 
 
+    // --- Aerodrome Pool Addresses for TWAP Oracle (BASE MAINNET) ---
+    // These pool addresses need to be verified for each token pair with WETH on Aerodrome
+    address constant USDC_WETH_POOL = 0x608E57164e89c411131F37b7d5c95659Cc1D6E70; // USDC/WETH pool
+    address constant CBBTC_WETH_POOL = 0xF10D826371f7d25897a1221432A91C96b8f27332; // CBBTC/WETH pool  
+    address constant VIRTU_WETH_POOL = 0xACB58DE7374Ce0d00C103af3EcB02A76F8ac4e70; // VIRTU/WETH pool
+
     address[] INITIAL_ALLOWED_TOKENS = [
         USDC_BASE_FOR_FEE,
         CBBTC_BASE,
@@ -107,9 +113,15 @@ contract DeployWhackRockFundRegistry is Script {
         initialAllowedTokens[1] = CBBTC_BASE;
         initialAllowedTokens[2] = VIRTU_BASE;
         uint256[] memory initialTargetWeightsBps = new uint256[](3);
-        initialTargetWeightsBps[0] = 4000; // 50%
+        initialTargetWeightsBps[0] = 4000; // 40%
         initialTargetWeightsBps[1] = 5000; // 50%
-        initialTargetWeightsBps[2] = 1000; // 0%
+        initialTargetWeightsBps[2] = 1000; // 10%
+        
+        // Pool addresses for the fund's tokens (for TWAP oracle)
+        address[] memory poolAddresses = new address[](3);
+        poolAddresses[0] = USDC_WETH_POOL;
+        poolAddresses[1] = CBBTC_WETH_POOL;
+        poolAddresses[2] = VIRTU_WETH_POOL;
         
         address agentAumFeeWalletForFund = deployerAddress; 
         uint256 agentSetTotalAumFeeBps = 200; 
@@ -120,12 +132,13 @@ contract DeployWhackRockFundRegistry is Script {
             initialAgentForFund,      // 1. address _initialAgent
             initialAllowedTokens,     // 2. address[] memory _fundAllowedTokens
             initialTargetWeightsBps,  // 3. uint256[] memory _initialTargetWeights
-            fundName,                 // 4. string memory _vaultName
-            fundSymbol,               // 5. string memory _vaultSymbol
-            fundURI,                  // 6. string memory _vaultURI
+            poolAddresses,            // 4. address[] memory _poolAddresses (NEW for V6)
+            fundName,                 // 5. string memory _vaultName
+            fundSymbol,               // 6. string memory _vaultSymbol
+            fundURI,                  // 7. string memory _vaultURI
             "A fan of Ben Cowen, this agent watches his latest videos and decides which assets to hold in the fund.  The ONLY assets allowed are cbBTC, Virtuals and USDC",
-            agentAumFeeWalletForFund, // 7. address _agentAumFeeWalletForFund
-            agentSetTotalAumFeeBps    // 8. uint256 _agentSetTotalAumFeeBps
+            agentAumFeeWalletForFund, // 8. address _agentAumFeeWalletForFund
+            agentSetTotalAumFeeBps    // 9. uint256 _agentSetTotalAumFeeBps
         );
         console.log("Dummy WhackRockFund created at:", newFundAddress);
         // --- End Dummy Fund Creation ---
