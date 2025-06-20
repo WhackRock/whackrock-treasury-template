@@ -78,14 +78,67 @@ if ($LASTEXITCODE -eq 0) {
             $broadcastContent = Get-Content $broadcastFile -Raw | ConvertFrom-Json
             
             # Find the WhackRockFund creation transaction
+            # Since the fund is created through the factory, we need to look for it differently
             $fundAddress = $null
             $fundTransaction = $null
             
+            # Method 1: Look for WhackRockFund by contractName
             foreach ($tx in $broadcastContent.transactions) {
                 if ($tx.contractName -eq "WhackRockFund") {
                     $fundAddress = $tx.contractAddress
                     $fundTransaction = $tx
+                    Write-Host "Found WhackRockFund by contractName" -ForegroundColor Gray
                     break
+                }
+            }
+            
+            # Method 2: If not found, look for createWhackRockFund function call and extract return value
+            if (-not $fundAddress) {
+                foreach ($tx in $broadcastContent.transactions) {
+                    if ($tx.function -and $tx.function -like "*createWhackRockFund*") {
+                        Write-Host "Found createWhackRockFund function call" -ForegroundColor Gray
+                        # The fund address should be in the logs or return value
+                        if ($tx.contractAddress) {
+                            $fundAddress = $tx.contractAddress
+                            $fundTransaction = $tx
+                            Write-Host "Found fund address from createWhackRockFund transaction" -ForegroundColor Gray
+                            break
+                        }
+                    }
+                }
+            }
+            
+            # Method 3: Parse logs to find fund creation event
+            if (-not $fundAddress) {
+                Write-Host "Searching in transaction logs for fund creation..." -ForegroundColor Gray
+                foreach ($tx in $broadcastContent.transactions) {
+                    if ($tx.transaction -and $tx.transaction.logs) {
+                        foreach ($log in $tx.transaction.logs) {
+                            # Look for events that might contain the fund address
+                            if ($log.topics -and $log.topics.Count -gt 0) {
+                                # The fund address might be in the event data
+                                Write-Host "Found transaction with logs, checking..." -ForegroundColor Gray
+                            }
+                        }
+                    }
+                }
+            }
+            
+            # Method 4: Debug - show all transaction info
+            if (-not $fundAddress) {
+                Write-Host "Debug: Showing all transactions in broadcast file:" -ForegroundColor Yellow
+                $txIndex = 0
+                foreach ($tx in $broadcastContent.transactions) {
+                    Write-Host "Transaction $txIndex:" -ForegroundColor Gray
+                    Write-Host "  Contract Name: $($tx.contractName)" -ForegroundColor Gray
+                    Write-Host "  Contract Address: $($tx.contractAddress)" -ForegroundColor Gray
+                    Write-Host "  Function: $($tx.function)" -ForegroundColor Gray
+                    Write-Host "  Transaction Type: $($tx.transactionType)" -ForegroundColor Gray
+                    if ($tx.transaction) {
+                        Write-Host "  To: $($tx.transaction.to)" -ForegroundColor Gray
+                        Write-Host "  Input length: $($tx.transaction.data.Length)" -ForegroundColor Gray
+                    }
+                    $txIndex++
                 }
             }
             
@@ -247,7 +300,160 @@ if ($LASTEXITCODE -eq 0) {
                 
             } else {
                 Write-Host "Could not find WhackRockFund address in broadcast file." -ForegroundColor Yellow
-                Write-Host "The fund may need to be verified manually after checking the deployment logs." -ForegroundColor Yellow
+                
+                # Method 5: Try to extract from recent forge output/logs
+                Write-Host "Attempting to find fund address from forge output..." -ForegroundColor Gray
+                
+                # Look for recent forge broadcast logs that might contain the fund address
+                $logFiles = Get-ChildItem -Path "broadcast" -Recurse -Filter "*.json" | Sort-Object LastWriteTime -Descending | Select-Object -First 5
+                
+                foreach ($logFile in $logFiles) {
+                    try {
+                        $logContent = Get-Content $logFile.FullName -Raw | ConvertFrom-Json
+                        if ($logContent.transactions) {
+                            foreach ($tx in $logContent.transactions) {
+                                if ($tx.contractName -eq "WhackRockFund" -and $tx.contractAddress) {
+                                    $fundAddress = $tx.contractAddress
+                                    Write-Host "Found WhackRockFund in $($logFile.Name): $fundAddress" -ForegroundColor Green
+                                    break
+                                }
+                            }
+                        }
+                        if ($fundAddress) { break }
+                    } catch {
+                        # Skip invalid JSON files
+                    }
+                }
+                
+                if ($fundAddress) {
+                    Write-Host "Found fund address from logs: $fundAddress" -ForegroundColor Green
+                    
+                    # Get deployer address from the main broadcast file
+                    $deployerAddress = $broadcastContent.transactions[0].transaction.from
+                    Write-Host "Deployer address: $deployerAddress" -ForegroundColor Gray
+                    
+                    # Use the fallback method with known deployment values
+                    Write-Host "Using fallback constructor arguments for fund verification..." -ForegroundColor Gray
+                    
+                    $fallbackEncodeArgs = @(
+                        "abi-encode",
+                        "constructor(address,address,address,address,address,address,address[],uint256[],string,string,string,address,uint256,address,address,string)",
+                        $deployerAddress,  # _initialOwner
+                        $deployerAddress,  # _initialAgent
+                        "0x2626664c2603336E57B271c5C0b26F421741e481", # uniswapV3Router
+                        "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a", # uniswapV3Quoter
+                        "0x33128a8fC17869897dcE68Ed026d694621f6FDfD", # uniswapV3Factory
+                        "0x4200000000000000000000000000000000000006", # WETH
+                        "[0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913,0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf,0x0b3e328455c4059EEb9e3f84b5543F74e24e7E1b]", # 3 tokens
+                        "[4000,5000,1000]", # weights
+                        "`"BenFan Fund by WhackRock`"", # fund name
+                        "`"BFWRF`"",                    # fund symbol
+                        "`"https://x.com/benjAImin_agent`"", # fund URI
+                        $deployerAddress,  # _agentAumFeeWalletForFund
+                        "200",            # _agentSetTotalAumFeeBps
+                        "0x90cfB07A46EE4bb20C970Dda18AaD1BA3c9450Ae", # protocolAumFeeRecipient
+                        "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", # USDC
+                        "`"`""           # empty data string
+                    )
+                    
+                    $constructorArgsResult = & $forgeExecutable $fallbackEncodeArgs 2>&1
+                    
+                    if ($LASTEXITCODE -eq 0 -and $constructorArgsResult) {
+                        $constructorArgs = $constructorArgsResult.Trim() -replace "^0x", ""
+                        
+                        Write-Host "Attempting to verify WhackRockFund with fallback args..." -ForegroundColor Yellow
+                        
+                        $verifyArgs = @(
+                            "verify-contract",
+                            $fundAddress,
+                            "src/WhackRockFundV6_UniSwap_TWAP.sol:WhackRockFund",
+                            "--chain", "8453",
+                            "--etherscan-api-key", $actualBasescanApiKey,
+                            "--constructor-args", "0x$constructorArgs",
+                            "--watch"
+                        )
+                        
+                        Write-Host "Executing: $forgeExecutable $($verifyArgs -join ' ')"
+                        & $forgeExecutable $verifyArgs
+                        
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Host "WhackRockFund verification submitted successfully!" -ForegroundColor Green
+                        } else {
+                            Write-Host "WhackRockFund verification failed." -ForegroundColor Yellow
+                        }
+                    } else {
+                        Write-Host "Failed to encode constructor arguments for fallback verification." -ForegroundColor Red
+                    }
+                } else {
+                    Write-Host "Could not find WhackRockFund address in any broadcast files." -ForegroundColor Yellow
+                    Write-Host "Please check the deployment logs for a line like: 'Dummy WhackRockFund created at: 0x...'" -ForegroundColor Gray
+                    
+                    # Ask user if they want to manually provide the fund address
+                    $manualAddress = Read-Host "Would you like to manually enter the fund address for verification? (Enter address or 'n' to skip)"
+                    
+                    if ($manualAddress -and $manualAddress -ne 'n' -and $manualAddress -match '^0x[a-fA-F0-9]{40}$') {
+                        Write-Host "Using manually provided fund address: $manualAddress" -ForegroundColor Green
+                        
+                        # Get deployer address from the main broadcast file
+                        $deployerAddress = $broadcastContent.transactions[0].transaction.from
+                        Write-Host "Deployer address: $deployerAddress" -ForegroundColor Gray
+                        
+                        # Use the fallback method with known deployment values
+                        Write-Host "Encoding constructor arguments for manual verification..." -ForegroundColor Gray
+                        
+                        $manualEncodeArgs = @(
+                            "abi-encode",
+                            "constructor(address,address,address,address,address,address,address[],uint256[],string,string,string,address,uint256,address,address,string)",
+                            $deployerAddress,  # _initialOwner
+                            $deployerAddress,  # _initialAgent
+                            "0x2626664c2603336E57B271c5C0b26F421741e481", # uniswapV3Router
+                            "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a", # uniswapV3Quoter
+                            "0x33128a8fC17869897dcE68Ed026d694621f6FDfD", # uniswapV3Factory
+                            "0x4200000000000000000000000000000000000006", # WETH
+                            "[0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913,0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf,0x0b3e328455c4059EEb9e3f84b5543F74e24e7E1b]", # 3 tokens
+                            "[4000,5000,1000]", # weights
+                            "`"BenFan Fund by WhackRock`"", # fund name
+                            "`"BFWRF`"",                    # fund symbol
+                            "`"https://x.com/benjAImin_agent`"", # fund URI
+                            $deployerAddress,  # _agentAumFeeWalletForFund
+                            "200",            # _agentSetTotalAumFeeBps
+                            "0x90cfB07A46EE4bb20C970Dda18AaD1BA3c9450Ae", # protocolAumFeeRecipient
+                            "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", # USDC
+                            "`"`""           # empty data string
+                        )
+                        
+                        $manualConstructorResult = & $forgeExecutable $manualEncodeArgs 2>&1
+                        
+                        if ($LASTEXITCODE -eq 0 -and $manualConstructorResult) {
+                            $manualConstructorArgs = $manualConstructorResult.Trim() -replace "^0x", ""
+                            
+                            Write-Host "Attempting to verify manually provided WhackRockFund address..." -ForegroundColor Yellow
+                            
+                            $manualVerifyArgs = @(
+                                "verify-contract",
+                                $manualAddress,
+                                "src/WhackRockFundV6_UniSwap_TWAP.sol:WhackRockFund",
+                                "--chain", "8453",
+                                "--etherscan-api-key", $actualBasescanApiKey,
+                                "--constructor-args", "0x$manualConstructorArgs",
+                                "--watch"
+                            )
+                            
+                            Write-Host "Executing: $forgeExecutable $($manualVerifyArgs -join ' ')"
+                            & $forgeExecutable $manualVerifyArgs
+                            
+                            if ($LASTEXITCODE -eq 0) {
+                                Write-Host "WhackRockFund verification submitted successfully!" -ForegroundColor Green
+                            } else {
+                                Write-Host "WhackRockFund verification failed. Please check the logs." -ForegroundColor Yellow
+                            }
+                        } else {
+                            Write-Host "Failed to encode constructor arguments for manual verification." -ForegroundColor Red
+                        }
+                    } else {
+                        Write-Host "Skipping manual fund verification." -ForegroundColor Gray
+                    }
+                }
             }
             
         } catch {
