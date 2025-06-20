@@ -11,7 +11,7 @@ pragma solidity ^0.8.20;
  *       `888'    `888'       888     888   .8'     `888.  `88b    ooo   888  `88b.   888  `88b.  `88b    d88' `88b    ooo   888  `88b.  
  *        `8'      `8'       o888o   o888o o88o     o8888o  `Y8bood8P'  o888o  o888o o888o  o888o  `Y8bood8P'   `Y8bood8P'  o888o  o888o 
  *  
- *    WHACKROCK – FUND REGISTRY AND FACTORY UPGRADABLE   
+ *    WHACKROCK – FUND UPGRADABLE REGISTRY    
  *    © 2024 WhackRock Labs – All rights reserved.
  */
  
@@ -27,7 +27,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IUniswapV3Router, IUniswapV3Quoter} from "./interfaces/IUniswapV3Router.sol";
 import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import {IWhackRockFundRegistry} from "./interfaces/IWhackRockFundRegistry.sol";
-import {WhackRockFund} from "./WhackRockFundV6_UniSwap_TWAP.sol"; 
+import {IWhackRockFundFactory} from "./interfaces/IWhackRockFundFactory.sol"; 
 
 /**
  * @title WhackRockFundRegistry
@@ -49,6 +49,9 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
     
     /// @notice Wrapped ETH address (hardcoded accounting asset)
     address public WETH_ADDRESS;
+    
+    /// @notice Factory contract for creating fund instances
+    IWhackRockFundFactory public fundFactory;
 
     // Fee parameters
     /// @notice USDC token used for protocol fees
@@ -104,6 +107,8 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
      * @param _uniswapV3RouterAddress Address of the Uniswap V3 router
      * @param _uniswapV3QuoterAddress Address of the Uniswap V3 quoter
      * @param _uniswapV3FactoryAddress Address of the Uniswap V3 factory
+     * @param _wethAddress Address of WETH token (accounting asset)
+     * @param _fundFactory Address of the deployed WhackRockFundFactory
      * @param _maxInitialFundTokensLength Maximum number of tokens a fund can have at creation
      * @param _usdcTokenAddress Address of the USDC token
      * @param _whackRockRewardsAddr Address that receives protocol fees
@@ -118,6 +123,7 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
         address _uniswapV3QuoterAddress,
         address _uniswapV3FactoryAddress,
         address _wethAddress,
+        address _fundFactory,
         uint256 _maxInitialFundTokensLength,
         address _usdcTokenAddress,
         address _whackRockRewardsAddr,
@@ -133,6 +139,7 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
         require(_uniswapV3QuoterAddress != address(0), "Registry: Quoter zero");
         require(_uniswapV3FactoryAddress != address(0), "Registry: Factory zero");
         require(_wethAddress != address(0), "Registry: WETH zero");
+        require(_fundFactory != address(0), "Registry: Fund factory zero");
         require(_maxInitialFundTokensLength > 0, "Registry: Max fund tokens must be > 0");
         require(_usdcTokenAddress != address(0), "Registry: USDC address zero");
         require(_whackRockRewardsAddr != address(0), "Registry: Rewards address zero");
@@ -142,6 +149,9 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
         uniswapV3Quoter = IUniswapV3Quoter(_uniswapV3QuoterAddress);
         uniswapV3Factory = IUniswapV3Factory(_uniswapV3FactoryAddress);
         WETH_ADDRESS = _wethAddress;
+        
+        // Set the fund factory (deployed separately)
+        fundFactory = IWhackRockFundFactory(_fundFactory);
         
         USDC_TOKEN = IERC20(_usdcTokenAddress); // Use standard IERC20
         whackRockRewardsAddress = _whackRockRewardsAddr;
@@ -167,6 +177,16 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
      * @param newImplementation Address of the new implementation contract
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    /**
+     * @notice Updates the fund factory address
+     * @dev Only callable by owner
+     * @param _newFundFactory Address of the new fund factory
+     */
+    function setFundFactory(address _newFundFactory) external onlyOwner {
+        require(_newFundFactory != address(0), "Registry: Fund factory zero");
+        fundFactory = IWhackRockFundFactory(_newFundFactory);
+    }
 
     /**
      * @notice Adds a token to the registry's global allowlist
@@ -311,8 +331,8 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
             USDC_TOKEN.safeTransferFrom(msg.sender, whackRockRewardsAddress, protocolFundCreationFeeUsdcAmount);
         }
 
-        // Create a new fund contract directly
-        WhackRockFund newFund = new WhackRockFund(
+        // Create a new fund using the factory
+        fundAddress = fundFactory.createFund(
             msg.sender, 
             _initialAgent,
             address(uniswapV3Router),
@@ -327,10 +347,8 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
             _agentAumFeeWalletForFund,     
             _agentSetTotalAumFeeBps,       
             protocolAumFeeRecipientForFunds,
-            address(USDC_TOKEN),
-            "" // data parameter
+            address(USDC_TOKEN)
         );
-        fundAddress = address(newFund);
 
 
         deployedFunds.push(fundAddress);

@@ -6,6 +6,7 @@ import "forge-std/console.sol";
 
 // Adjust import paths based on your project structure
 import {WhackRockFundRegistry, IWhackRockFundRegistry} from "../src/WhackRockFundRegistry.sol"; // Assuming this is your UUPS upgradeable registry
+import {WhackRockFundFactory} from "../src/WhackRockFundFactory.sol";
 // import {WhackRockFund} from "../src/WhackRockFundV5_ERC4626_Aerodrome_SubGEvents.sol"; 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IAerodromeRouter} from "../src/interfaces/IRouter.sol";
@@ -56,45 +57,50 @@ contract WhackRockFundRegistryTest is Test {
     using SafeERC20 for IERC20;
 
     WhackRockFundRegistry public registryProxy; // This will point to the proxy
+    WhackRockFundFactory public fundFactory; // Fund factory deployed first
     IAerodromeRouter public aerodromeRouter = IAerodromeRouter(AERODROME_ROUTER_ADDRESS_BASE);
     IERC20 public usdcToken = IERC20(USDC_BASE);
 
 
     function setUp() public {
-        // 1. Deploy the implementation contract
+        // 1. Deploy the fund factory first (following deployment script pattern)
+        fundFactory = new WhackRockFundFactory();
+        
+        // 2. Deploy the registry implementation contract
         WhackRockFundRegistry registryImplementation = new WhackRockFundRegistry();
 
-        // 2. Prepare the initialization calldata
+        // 3. Prepare the initialization calldata (including factory address)
         bytes memory initializeData = abi.encodeWithSelector(
             WhackRockFundRegistry.initialize.selector,
-            REGISTRY_OWNER,
-            UNISWAP_V3_ROUTER_BASE,
-            UNISWAP_V3_QUOTER_BASE,
-            UNISWAP_V3_FACTORY_BASE,
-            WETH_ADDRESS_BASE,
-            MAX_INITIAL_TOKENS_FOR_FUND_REGISTRY,
-            USDC_BASE,
-            WHACKROCK_REWARDS_ADDR,
-            PROTOCOL_CREATION_FEE_USDC,
-            TOTAL_AUM_FEE_BPS_FOR_FUNDS,
-            PROTOCOL_AUM_RECIPIENT_FOR_FUNDS,
-            MAX_AGENT_DEPOSIT_FEE_BPS_REGISTRY
+            REGISTRY_OWNER,                                 // initialOwner
+            UNISWAP_V3_ROUTER_BASE,                        // _uniswapV3RouterAddress
+            UNISWAP_V3_QUOTER_BASE,                        // _uniswapV3QuoterAddress
+            UNISWAP_V3_FACTORY_BASE,                       // _uniswapV3FactoryAddress
+            WETH_ADDRESS_BASE,                             // _wethAddress
+            address(fundFactory),                          // _fundFactory
+            MAX_INITIAL_TOKENS_FOR_FUND_REGISTRY,          // _maxInitialFundTokensLength
+            USDC_BASE,                                     // _usdcTokenAddress
+            WHACKROCK_REWARDS_ADDR,                        // _whackRockRewardsAddr
+            PROTOCOL_CREATION_FEE_USDC,                    // _protocolCreationFeeUsdc
+            TOTAL_AUM_FEE_BPS_FOR_FUNDS,                   // _totalAumFeeBps
+            PROTOCOL_AUM_RECIPIENT_FOR_FUNDS,              // _protocolAumRecipient
+            MAX_AGENT_DEPOSIT_FEE_BPS_REGISTRY             // _maxAgentDepositFeeBpsAllowed
         );
 
-        // 3. Deploy the ERC1967Proxy
+        // 4. Deploy the ERC1967Proxy
         ERC1967Proxy proxy = new ERC1967Proxy(address(registryImplementation), initializeData);
         
-        // 4. Point our registry variable to the proxy address
+        // 5. Point our registry variable to the proxy address
         registryProxy = WhackRockFundRegistry(address(proxy));
 
-        // 5. Pre-populate registry's allowed tokens list for tests (as REGISTRY_OWNER)
+        // 6. Pre-populate registry's allowed tokens list for tests (as REGISTRY_OWNER)
         vm.startPrank(REGISTRY_OWNER);
         registryProxy.addRegistryAllowedToken(USDC_BASE);
         registryProxy.addRegistryAllowedToken(CBBTC_BASE);
         registryProxy.addRegistryAllowedToken(VIRTU_BASE);
         vm.stopPrank();
 
-        // Deal USDC to fund creators for creation fees
+        // 7. Deal USDC to fund creators for creation fees
         deal(USDC_BASE, FUND_CREATOR_1, PROTOCOL_CREATION_FEE_USDC * 2); // Enough for one creation
         deal(USDC_BASE, FUND_CREATOR_2, PROTOCOL_CREATION_FEE_USDC * 2);
     }

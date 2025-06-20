@@ -4,8 +4,9 @@ pragma solidity ^0.8.20;
 import "forge-std/Script.sol";
 import "forge-std/console.sol";
 
-// Contract to be deployed
+// Contracts to be deployed
 import {WhackRockFundRegistry} from "../src/WhackRockFundRegistry.sol";
+import {WhackRockFundFactory} from "../src/WhackRockFundFactory.sol";
 
 // For deploying UUPS proxy
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -64,6 +65,11 @@ contract DeployWhackRockFundRegistry is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
+        // Deploy the fund factory first
+        console.log("Deploying WhackRockFundFactory...");
+        WhackRockFundFactory fundFactory = new WhackRockFundFactory();
+        console.log("WhackRockFundFactory deployed at:", address(fundFactory));
+
         console.log("Deploying WhackRockFundRegistry implementation...");
         WhackRockFundRegistry registryImplementation = new WhackRockFundRegistry();
         console.log("WhackRockFundRegistry implementation deployed at:", address(registryImplementation));
@@ -77,6 +83,7 @@ contract DeployWhackRockFundRegistry is Script {
             UNISWAP_V3_QUOTER_BASE, // _uniswapV3QuoterAddress
             UNISWAP_V3_FACTORY_BASE, // _uniswapV3FactoryAddress
             WETH_BASE, // _wethAddress
+            address(fundFactory), // _fundFactory
             MAX_INITIAL_TOKENS_FOR_FUND_REGISTRY, // _maxInitialFundTokensLength
             USDC_BASE_FOR_FEE, // _usdcTokenAddress
             WHACKROCK_REWARDS_ADDR, // _whackRockRewardsAddr
@@ -159,6 +166,7 @@ contract DeployWhackRockFundRegistry is Script {
 
         console.log("--- Deployment Summary ---");
         console.log("Deployer Address:", deployerAddress);
+        console.log("Fund Factory Address:", address(fundFactory));
         console.log("Registry Implementation Address:", address(registryImplementation));
         console.log("Registry Proxy Address:", registryProxyAddress);
         console.log("Dummy Fund Address:", newFundAddress); // Added dummy fund address to summary
@@ -169,6 +177,7 @@ contract DeployWhackRockFundRegistry is Script {
         console.log("Uniswap V3 Quoter:", UNISWAP_V3_QUOTER_BASE);
         console.log("Uniswap V3 Factory:", UNISWAP_V3_FACTORY_BASE);
         console.log("WETH Address:", WETH_BASE);
+        console.log("Fund Factory Address:", address(fundFactory));
         console.log("Max Initial Tokens Length:", MAX_INITIAL_TOKENS_FOR_FUND_REGISTRY);
         console.log("USDC for Creation Fee:", USDC_BASE_FOR_FEE);
         console.log("WhackRock Rewards Address:", WHACKROCK_REWARDS_ADDR);

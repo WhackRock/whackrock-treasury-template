@@ -95,7 +95,7 @@ contract UniswapV3TWAPOracle {
         IUniswapV3Pool pool = IUniswapV3Pool(poolAddress);
 
         // Check if pool has sufficient observations
-        (, , uint16 observationIndex, uint16 observationCardinality, , , ) = pool.slot0();
+        (, , , uint16 observationCardinality, , , ) = pool.slot0();
         if (observationCardinality == 0) revert InsufficientObservations();
 
         // Get TWAP tick
