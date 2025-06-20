@@ -16,31 +16,30 @@ contract DeployWhackRockFundRegistry is Script {
     // These values should be reviewed and confirmed before mainnet deployment.
     address constant REGISTRY_OWNER = 0x90cfB07A46EE4bb20C970Dda18AaD1BA3c9450Ae; 
 
-    // External Contract Addresses (Base Mainnet)
-    address constant AERODROME_ROUTER_ADDRESS_BASE = 0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43; 
+    // External Contract Addresses (Base Mainnet) - Uniswap V3
+    address constant UNISWAP_V3_ROUTER_BASE = 0x2626664c2603336E57B271c5C0b26F421741e481; // SwapRouter02
+    address constant UNISWAP_V3_QUOTER_BASE = 0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a; // QuoterV2
+    address constant UNISWAP_V3_FACTORY_BASE = 0x33128a8fC17869897dcE68Ed026d694621f6FDfD; // UniswapV3Factory
     address constant USDC_BASE_FOR_FEE = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // USDC for creation fees & allowed token
     address constant WETH_BASE = 0x4200000000000000000000000000000000000006; // WETH for Base
-    address constant CBBTC_BASE = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf; // cbETH as an allowed token
-    address constant VIRTU_BASE = 0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b; // VIRTU as an allowed token
+    address constant CBBTC_BASE = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf; // cbBTC as an allowed token
+    address constant RETH_BASE = 0xB6fe221Fe9EeF5aBa221c348bA20A1Bf5e73624c; // rETH as an allowed token
+    address constant VIRTU_BASE = 0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b; // VIRTUAL as an allowed token
+    address constant TOSHI_BASE = 0xAC1Bd2486aAf3B5C0fc3Fd868558b082a531B2B4; // TOSHI as an allowed token 
+    address constant BRETT_BASE = 0x532f27101965dd16442E59d40670FaF5eBB142E4; // BRETT as an allowed token
     address constant BasedPepe_BASE = 0x52b492a33E447Cdb854c7FC19F1e57E8BfA1777D; 
-    address constant TOSHI_BASE = 0xAC1Bd2486aAf3B5C0fc3Fd868558b082a531B2B4; 
     address constant AIXBT_BASE = 0x4F9Fd6Be4a90f2620860d680c0d4d5Fb53d1A825; 
-    address constant wstETH_BASE = 0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452; 
 
-    // --- Aerodrome Pool Addresses for TWAP Oracle (BASE MAINNET) ---
-    // These pool addresses need to be verified for each token pair with WETH on Aerodrome
-    address constant USDC_WETH_POOL = 0x608E57164e89c411131F37b7d5c95659Cc1D6E70; // USDC/WETH pool
-    address constant CBBTC_WETH_POOL = 0xF10D826371f7d25897a1221432A91C96b8f27332; // CBBTC/WETH pool  
-    address constant VIRTU_WETH_POOL = 0xACB58DE7374Ce0d00C103af3EcB02A76F8ac4e70; // VIRTU/WETH pool
 
     address[] INITIAL_ALLOWED_TOKENS = [
         USDC_BASE_FOR_FEE,
         CBBTC_BASE,
+        RETH_BASE,
         VIRTU_BASE,
-        BasedPepe_BASE,
         TOSHI_BASE,
-        AIXBT_BASE,
-        wstETH_BASE
+        BRETT_BASE,
+        BasedPepe_BASE,
+        AIXBT_BASE
     ];
 
     // Registry Initialization Parameters (Customize as needed)
@@ -74,14 +73,17 @@ contract DeployWhackRockFundRegistry is Script {
         bytes memory initializeData = abi.encodeWithSelector(
             WhackRockFundRegistry.initialize.selector,
             deployerAddress, // initialOwner (deployer becomes temporary owner)
-            AERODROME_ROUTER_ADDRESS_BASE,
-            MAX_INITIAL_TOKENS_FOR_FUND_REGISTRY,
-            USDC_BASE_FOR_FEE,
-            WHACKROCK_REWARDS_ADDR,
-            PROTOCOL_CREATION_FEE_USDC,
-            TOTAL_AUM_FEE_BPS_FOR_FUNDS,
-            PROTOCOL_AUM_FEE_RECIPIENT_FOR_FUNDS,
-            MAX_AGENT_DEPOSIT_FEE_BPS_REGISTRY
+            UNISWAP_V3_ROUTER_BASE, // _uniswapV3RouterAddress
+            UNISWAP_V3_QUOTER_BASE, // _uniswapV3QuoterAddress
+            UNISWAP_V3_FACTORY_BASE, // _uniswapV3FactoryAddress
+            WETH_BASE, // _wethAddress
+            MAX_INITIAL_TOKENS_FOR_FUND_REGISTRY, // _maxInitialFundTokensLength
+            USDC_BASE_FOR_FEE, // _usdcTokenAddress
+            WHACKROCK_REWARDS_ADDR, // _whackRockRewardsAddr
+            PROTOCOL_CREATION_FEE_USDC, // _protocolCreationFeeUsdc
+            TOTAL_AUM_FEE_BPS_FOR_FUNDS, // _totalAumFeeBps
+            PROTOCOL_AUM_FEE_RECIPIENT_FOR_FUNDS, // _protocolAumRecipient
+            MAX_AGENT_DEPOSIT_FEE_BPS_REGISTRY // _maxAgentDepositFeeBpsAllowed
         );
 
         console.log("Deploying ERC1967Proxy for WhackRockFundRegistry...");
@@ -105,23 +107,22 @@ contract DeployWhackRockFundRegistry is Script {
 
         // --- Create a Dummy WhackRockFund ---
         console.log("Creating a Dummy WhackRockFund...");
-        string memory fundName = "BenFan Fund by WhackRock";
-        string memory fundSymbol = "BFWRF";
-        string memory fundURI = "https://x.com/benjAImin_agent";
-        address[] memory initialAllowedTokens = new address[](3);
+        string memory fundName = "WhackRock Diversified Fund";
+        string memory fundSymbol = "WRDF";
+        string memory fundURI = "https://whackrock.io/funds/diversified";
+        address[] memory initialAllowedTokens = new address[](4);
         initialAllowedTokens[0] = USDC_BASE_FOR_FEE;
         initialAllowedTokens[1] = CBBTC_BASE;
-        initialAllowedTokens[2] = VIRTU_BASE;
-        uint256[] memory initialTargetWeightsBps = new uint256[](3);
-        initialTargetWeightsBps[0] = 4000; // 40%
-        initialTargetWeightsBps[1] = 5000; // 50%
-        initialTargetWeightsBps[2] = 1000; // 10%
+        initialAllowedTokens[2] = RETH_BASE;
+        initialAllowedTokens[3] = VIRTU_BASE;
+        uint256[] memory initialTargetWeightsBps = new uint256[](4);
+        initialTargetWeightsBps[0] = 4000; // 40% USDC
+        initialTargetWeightsBps[1] = 2500; // 25% cbBTC
+        initialTargetWeightsBps[2] = 2500; // 25% rETH
+        initialTargetWeightsBps[3] = 1000; // 10% VIRTUAL
         
-        // Pool addresses for the fund's tokens (for TWAP oracle)
-        address[] memory poolAddresses = new address[](3);
-        poolAddresses[0] = USDC_WETH_POOL;
-        poolAddresses[1] = CBBTC_WETH_POOL;
-        poolAddresses[2] = VIRTU_WETH_POOL;
+        // Empty pool addresses array - Uniswap V3 TWAP Oracle discovers pools dynamically
+        address[] memory poolAddresses = new address[](0);
         
         address agentAumFeeWalletForFund = deployerAddress; 
         uint256 agentSetTotalAumFeeBps = 200; 
@@ -136,7 +137,7 @@ contract DeployWhackRockFundRegistry is Script {
             fundName,                 // 5. string memory _vaultName
             fundSymbol,               // 6. string memory _vaultSymbol
             fundURI,                  // 7. string memory _vaultURI
-            "A fan of Ben Cowen, this agent watches his latest videos and decides which assets to hold in the fund.  The ONLY assets allowed are cbBTC, Virtuals and USDC",
+            "A diversified fund holding major DeFi assets on Base. Holds USDC, cbBTC, rETH, and VIRTUAL tokens with automatic rebalancing via Uniswap V3 TWAP oracles.",
             agentAumFeeWalletForFund, // 8. address _agentAumFeeWalletForFund
             agentSetTotalAumFeeBps    // 9. uint256 _agentSetTotalAumFeeBps
         );
@@ -164,7 +165,10 @@ contract DeployWhackRockFundRegistry is Script {
         console.log("Final Registry Owner (intended):", REGISTRY_OWNER);
         console.log("--- Review Parameters Used for Initialization ---");
         console.log("Initial Temporary Owner (Deployer):", deployerAddress);
-        console.log("Aerodrome Router:", AERODROME_ROUTER_ADDRESS_BASE);
+        console.log("Uniswap V3 Router:", UNISWAP_V3_ROUTER_BASE);
+        console.log("Uniswap V3 Quoter:", UNISWAP_V3_QUOTER_BASE);
+        console.log("Uniswap V3 Factory:", UNISWAP_V3_FACTORY_BASE);
+        console.log("WETH Address:", WETH_BASE);
         console.log("Max Initial Tokens Length:", MAX_INITIAL_TOKENS_FOR_FUND_REGISTRY);
         console.log("USDC for Creation Fee:", USDC_BASE_FOR_FEE);
         console.log("WhackRock Rewards Address:", WHACKROCK_REWARDS_ADDR);
@@ -174,7 +178,11 @@ contract DeployWhackRockFundRegistry is Script {
         console.log("Max Agent Deposit Fee BPS:", MAX_AGENT_DEPOSIT_FEE_BPS_REGISTRY);
         console.log("--- Initially Allowed Tokens Added ---");
         console.log("USDC:", USDC_BASE_FOR_FEE);
-        console.log("CBETH:", CBBTC_BASE);
-        console.log("VIRTU:", VIRTU_BASE);
+        console.log("cbBTC:", CBBTC_BASE);
+        console.log("rETH:", RETH_BASE);
+        console.log("VIRTUAL:", VIRTU_BASE);
+        console.log("TOSHI:", TOSHI_BASE);
+        console.log("BRETT:", BRETT_BASE);
+        console.log("--- Note: Pool addresses are discovered dynamically by the Uniswap V3 TWAP Oracle ---");
     }
 } 
