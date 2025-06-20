@@ -16,7 +16,6 @@ pragma solidity ^0.8.20;
  */
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IAerodromeRouter} from "./IRouter.sol"; // Defines IAerodromeRouter
 
 /**
  * @title IWhackRockFund
@@ -176,12 +175,6 @@ interface IWhackRockFund {
      * @return Address of the current agent
      */
     function agent() external view returns (address);
-
-    /**
-     * @notice Returns the DEX router used for swaps
-     * @return Aerodrome router interface
-     */
-    function dexRouter() external view returns (IAerodromeRouter);
 
     /**
      * @notice Returns the accounting asset (WETH) address

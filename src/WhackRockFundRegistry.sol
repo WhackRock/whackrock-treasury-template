@@ -311,6 +311,7 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
             USDC_TOKEN.safeTransferFrom(msg.sender, whackRockRewardsAddress, protocolFundCreationFeeUsdcAmount);
         }
 
+        // Create a new fund contract directly
         WhackRockFund newFund = new WhackRockFund(
             msg.sender, 
             _initialAgent,

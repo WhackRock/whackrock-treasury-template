@@ -913,9 +913,5 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
     function ACCOUNTING_ASSET() external view returns (address) {
         return WETH_ADDRESS;
     }
-    
-    function dexRouter() external view returns (IAerodromeRouter) {
-        // Return zero address since we're using Uniswap V3 now
-        return IAerodromeRouter(address(0));
-    }
+
 }
