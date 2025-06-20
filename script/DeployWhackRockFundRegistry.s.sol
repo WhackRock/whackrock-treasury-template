@@ -113,20 +113,20 @@ contract DeployWhackRockFundRegistry is Script {
         registryAtProxy.batchAddRegistryAllowedToken(INITIAL_ALLOWED_TOKENS);
 
         // --- Create a Dummy WhackRockFund ---
+        
         console.log("Creating a Dummy WhackRockFund...");
-        string memory fundName = "WhackRock Diversified Fund";
-        string memory fundSymbol = "WRDF";
-        string memory fundURI = "https://whackrock.io/funds/diversified";
-        address[] memory initialAllowedTokens = new address[](4);
+        string memory fundName = "BenFan Fund by WhackRock";
+        string memory fundSymbol = "BFWRF";
+        string memory fundURI = "https://x.com/benjAImin_agent";
+        string memory fundDescription = "A fan of Ben Cowen, this agent watches his latest videos and decides which assets to hold in the fund.  The ONLY assets allowed are cbBTC, Virtuals and USDC";
+        address[] memory initialAllowedTokens = new address[](3);
         initialAllowedTokens[0] = USDC_BASE_FOR_FEE;
         initialAllowedTokens[1] = CBBTC_BASE;
-        initialAllowedTokens[2] = RETH_BASE;
-        initialAllowedTokens[3] = VIRTU_BASE;
-        uint256[] memory initialTargetWeightsBps = new uint256[](4);
-        initialTargetWeightsBps[0] = 4000; // 40% USDC
-        initialTargetWeightsBps[1] = 2500; // 25% cbBTC
-        initialTargetWeightsBps[2] = 2500; // 25% rETH
-        initialTargetWeightsBps[3] = 1000; // 10% VIRTUAL
+        initialAllowedTokens[2] = VIRTU_BASE;
+        uint256[] memory initialTargetWeightsBps = new uint256[](3);
+        initialTargetWeightsBps[0] = 4000; // 50%
+        initialTargetWeightsBps[1] = 5000; // 50%
+        initialTargetWeightsBps[2] = 1000; // 0%
         
         // Empty pool addresses array - Uniswap V3 TWAP Oracle discovers pools dynamically
         address[] memory poolAddresses = new address[](0);
@@ -144,7 +144,7 @@ contract DeployWhackRockFundRegistry is Script {
             fundName,                 // 5. string memory _vaultName
             fundSymbol,               // 6. string memory _vaultSymbol
             fundURI,                  // 7. string memory _vaultURI
-            "A diversified fund holding major DeFi assets on Base. Holds USDC, cbBTC, rETH, and VIRTUAL tokens with automatic rebalancing via Uniswap V3 TWAP oracles.",
+            fundDescription,
             agentAumFeeWalletForFund, // 8. address _agentAumFeeWalletForFund
             agentSetTotalAumFeeBps    // 9. uint256 _agentSetTotalAumFeeBps
         );
