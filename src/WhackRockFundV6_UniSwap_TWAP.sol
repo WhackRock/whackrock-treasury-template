@@ -411,7 +411,8 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
      *      Mints new shares and distributes them between agent and protocol
      *      according to AGENT_AUM_FEE_SHARE_BPS and PROTOCOL_AUM_FEE_SHARE_BPS
      */
-    function collectAgentManagementFee() external { 
+    function collectAgentManagementFee() external onlyOwner {
+
         if (agentAumFeeBps == 0) revert E5();
         if (block.timestamp <= lastAgentAumFeeCollectionTimestamp) revert E5();
 
@@ -804,7 +805,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
                 try this.getTokenValueInWETH(_token, _amount, 10000) returns (uint256 value) {
                     return value;
                 } catch {
-                    return 0;
+                    revert E6();
                 }
             }
         }
