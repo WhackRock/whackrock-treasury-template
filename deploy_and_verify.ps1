@@ -131,22 +131,25 @@ if ($LASTEXITCODE -eq 0) {
                     # string memory data
                     
                     # Use forge to encode the constructor arguments
+                    # Note: The createWhackRockFund call now includes fundDescription parameter
+                    # createWhackRockFund params: _initialAgent, _fundAllowedTokens, _initialTargetWeights, _poolAddresses, _vaultName, _vaultSymbol, _vaultURI, _fundDescription, _agentAumFeeWalletForFund, _agentSetTotalAumFeeBps
+                    
                     $encodeArgs = @(
                         "abi-encode",
                         "constructor(address,address,address,address,address,address,address[],uint256[],string,string,string,address,uint256,address,address,string)",
                         $deployerAddress,  # _initialOwner
-                        $args[0],         # _initialAgent
+                        $args[0],         # _initialAgent (from createWhackRockFund call)
                         "0x2626664c2603336E57B271c5C0b26F421741e481", # uniswapV3Router
                         "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a", # uniswapV3Quoter
                         "0x33128a8fC17869897dcE68Ed026d694621f6FDfD", # uniswapV3Factory
                         "0x4200000000000000000000000000000000000006", # WETH
-                        "[$($args[1] -join ',')]", # _fundAllowedTokens array
-                        "[$($args[2] -join ',')]", # _initialTargetWeights array
-                        "`"$($args[4])`"",        # _vaultName
-                        "`"$($args[5])`"",        # _vaultSymbol
-                        "`"$($args[6])`"",        # _vaultURI
-                        $args[8],                 # _agentAumFeeWalletForFund
-                        $args[9],                 # _agentSetTotalAumFeeBps
+                        "[$($args[1] -join ',')]", # _fundAllowedTokens array (3 tokens: USDC, cbBTC, VIRTUAL)
+                        "[$($args[2] -join ',')]", # _initialTargetWeights array (4000, 5000, 1000)
+                        "`"$($args[4])`"",        # _vaultName ("BenFan Fund by WhackRock")
+                        "`"$($args[5])`"",        # _vaultSymbol ("BFWRF")
+                        "`"$($args[6])`"",        # _vaultURI ("https://x.com/benjAImin_agent")
+                        $args[8],                 # _agentAumFeeWalletForFund (deployerAddress)
+                        $args[9],                 # _agentSetTotalAumFeeBps (200)
                         "0x90cfB07A46EE4bb20C970Dda18AaD1BA3c9450Ae", # protocolAumFeeRecipient
                         "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", # USDC
                         "`"`""                    # empty data string
@@ -174,12 +177,47 @@ if ($LASTEXITCODE -eq 0) {
                     Write-Host "Using default constructor args based on deployment script" -ForegroundColor Gray
                     
                     # Use hardcoded values from the deployment script
-                    $constructorArgs = "000000000000000000000000$($deployerAddress.Substring(2).ToLower())" +
-                                      "000000000000000000000000$($deployerAddress.Substring(2).ToLower())" +
-                                      "0000000000000000000000002626664c2603336e57b271c5c0b26f421741e481" +
-                                      "0000000000000000000000003d4e44eb1374240ce5f1b871ab261cd16335b76a" +
-                                      "00000000000000000000000033128a8fc17869897dce68ed026d694621f6fdfd" +
-                                      "0000000000000000000000004200000000000000000000000000000000000006"
+                    # BenFan Fund with 3 tokens: USDC(40%), cbBTC(50%), VIRTUAL(10%)
+                    # Fund name: "BenFan Fund by WhackRock", symbol: "BFWRF"
+                    
+                    # Use forge to encode with known values from deployment script
+                    $fallbackEncodeArgs = @(
+                        "abi-encode",
+                        "constructor(address,address,address,address,address,address,address[],uint256[],string,string,string,address,uint256,address,address,string)",
+                        $deployerAddress,  # _initialOwner
+                        $deployerAddress,  # _initialAgent
+                        "0x2626664c2603336E57B271c5C0b26F421741e481", # uniswapV3Router
+                        "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a", # uniswapV3Quoter
+                        "0x33128a8fC17869897dcE68Ed026d694621f6FDfD", # uniswapV3Factory
+                        "0x4200000000000000000000000000000000000006", # WETH
+                        "[0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913,0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf,0x0b3e328455c4059EEb9e3f84b5543F74e24e7E1b]", # 3 tokens: USDC, cbBTC, VIRTUAL
+                        "[4000,5000,1000]", # weights: 40%, 50%, 10%
+                        "`"BenFan Fund by WhackRock`"", # fund name
+                        "`"BFWRF`"",                    # fund symbol
+                        "`"https://x.com/benjAImin_agent`"", # fund URI
+                        $deployerAddress,  # _agentAumFeeWalletForFund
+                        "200",            # _agentSetTotalAumFeeBps (2%)
+                        "0x90cfB07A46EE4bb20C970Dda18AaD1BA3c9450Ae", # protocolAumFeeRecipient
+                        "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", # USDC
+                        "`"`""           # empty data string
+                    )
+                    
+                    Write-Host "Encoding fallback constructor arguments..." -ForegroundColor Gray
+                    $fallbackResult = & $forgeExecutable $fallbackEncodeArgs 2>&1
+                    
+                    if ($LASTEXITCODE -eq 0 -and $fallbackResult) {
+                        $constructorArgs = $fallbackResult.Trim() -replace "^0x", ""
+                        Write-Host "Fallback constructor args encoded successfully" -ForegroundColor Green
+                    } else {
+                        Write-Host "Failed to encode fallback constructor args, using minimal fallback" -ForegroundColor Yellow
+                        # Very basic fallback with just the addresses
+                        $constructorArgs = "000000000000000000000000$($deployerAddress.Substring(2).ToLower())" +
+                                          "000000000000000000000000$($deployerAddress.Substring(2).ToLower())" +
+                                          "0000000000000000000000002626664c2603336e57b271c5c0b26f421741e481" +
+                                          "0000000000000000000000003d4e44eb1374240ce5f1b871ab261cd16335b76a" +
+                                          "00000000000000000000000033128a8fc17869897dce68ed026d694621f6fdfd" +
+                                          "0000000000000000000000004200000000000000000000000000000000000006"
+                    }
                 }
                 
                 Write-Host "Attempting to verify WhackRockFund..." -ForegroundColor Yellow
