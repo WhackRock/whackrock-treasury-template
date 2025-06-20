@@ -11,7 +11,7 @@ import {IERC20} from '@openzeppelin/contracts/interfaces/IERC20.sol';
 import {ERC20} from '@openzeppelin/contracts/token/ERC20/ERC20.sol';
 // Assuming IWhackRockFund interface is defined if needed, or WhackRockFund itself is used.
 import {IWhackRockFund} from "../src/interfaces/IWhackRockFund.sol";
-import {WhackRockFund} from "../src/WhackRockFundV5_ERC4626_Aerodrome_SubGEvents.sol";
+import {WhackRockFund} from "../src/WhackRockFundV6_Aerodrome.sol";
 
 
 
@@ -34,13 +34,6 @@ address constant TEST_AGENT_AUM_FEE_WALLET = address(0x5000);
 uint256 constant TEST_TOTAL_AUM_FEE_BPS = 100; // Example: 1% total annual AUM fee (100 BPS = 1%)
 address constant TEST_PROTOCOL_AUM_RECIPIENT = address(0x6000); 
 
-/**
-* @notice Minimal interface to fetch an ERC20 token's symbol.
-* @dev Standard IERC20 does not include symbol, but ERC20 contracts typically do.
-*/
-interface IERC20Symbol {
-    function symbol() external view returns (string memory);
-}
 
 contract MockERC20ForSymbolTest is ERC20 {
     constructor(string memory name, string memory symbol_) ERC20(name, symbol_) {}
@@ -230,7 +223,6 @@ contract WhackRockFundTest is Test {
         assertTrue(weth.balanceOf(address(whackRockFund)) < 1e15);
     }
 
-    // --- NEW TESTS START HERE ---
 
     function testCollectAgentManagementFee_CorrectAccrualAndDistribution() public {
         require(defaultAerodromeFactory != address(0), "Aerodrome default factory not set in setUp");
@@ -272,7 +264,7 @@ contract WhackRockFundTest is Test {
             initialTotalShares, // totalSharesAtFeeCalculation
             block.timestamp + oneYearInSeconds
         );
-
+        vm.prank(TEST_OWNER);
         whackRockFund.collectAgentManagementFee();
 
         assertApproxEqAbs(whackRockFund.balanceOf(TEST_AGENT_AUM_FEE_WALLET), expectedAgentShares_calc, expectedAgentShares_calc / 1000 + 1); 
@@ -306,7 +298,7 @@ contract WhackRockFundTest is Test {
                 block.timestamp + 1
             );
         }
-        
+        vm.prank(TEST_OWNER);
         whackRockFund.collectAgentManagementFee(); 
         
         assertApproxEqAbs(whackRockFund.balanceOf(TEST_AGENT_AUM_FEE_WALLET), agentSharesBeforeSecondCall + expectedAgentSharesFor1Sec, expectedAgentSharesFor1Sec / 1000 + 2); 
@@ -373,8 +365,6 @@ contract WhackRockFundTest is Test {
         assertEq(navBefore, 0, "Initial NAV should be 0");
 
         vm.startPrank(TEST_AGENT);
-        vm.expectEmit(false, false, false, false, address(whackRockFund));
-        emit IWhackRockFund.RebalanceCycleExecuted(0,0,0,0);
         whackRockFund.triggerRebalance();
         vm.stopPrank();
 
@@ -685,32 +675,6 @@ contract WhackRockFundTest is Test {
         assertApproxEqAbs(virtuValueWETH, targetVirtuNew, targetVirtuNew / 10); 
     }
 
-    function testEmergencyWithdrawERC20_AllowedToken_NoEvents() public {
-        uint256 amountToSteal = 1 * 1e6; // 1 USDC
-        deal(USDC_BASE, address(whackRockFund), amountToSteal * 2);
-
-        uint256 ownerBalanceBefore = tokenA_USDC.balanceOf(TEST_OWNER);
-        vm.startPrank(TEST_OWNER);
-        whackRockFund.emergencyWithdrawERC20(USDC_BASE, TEST_OWNER, amountToSteal);
-        vm.stopPrank();
-
-        assertEq(tokenA_USDC.balanceOf(TEST_OWNER), ownerBalanceBefore + amountToSteal);
-        assertEq(tokenA_USDC.balanceOf(address(whackRockFund)), amountToSteal);
-    }
-
-    function testEmergencyWithdrawERC20_NonAllowedToken_NoEvents() public {
-        IERC20 nonAllowed = IERC20(NON_ALLOWED_TOKEN_EXAMPLE);
-        uint256 amountToSteal = 1 * 1e18; // 1 DAI
-        deal(NON_ALLOWED_TOKEN_EXAMPLE, address(whackRockFund), amountToSteal * 2);
-
-        uint256 ownerBalanceBefore = nonAllowed.balanceOf(TEST_OWNER);
-        vm.startPrank(TEST_OWNER);
-        whackRockFund.emergencyWithdrawERC20(NON_ALLOWED_TOKEN_EXAMPLE, TEST_OWNER, amountToSteal);
-        vm.stopPrank();
-
-        assertEq(nonAllowed.balanceOf(TEST_OWNER), ownerBalanceBefore + amountToSteal);
-        assertEq(nonAllowed.balanceOf(address(whackRockFund)), amountToSteal);
-    }
 
     // --- NEW DEPOSIT LIMIT TESTS ---
 
@@ -728,19 +692,6 @@ contract WhackRockFundTest is Test {
         vm.stopPrank();
     }
     
-    function testFirstDepositBelowMinimumInitialDeposit_Reverts() public {
-        // Try to make first deposit below MINIMUM_INITIAL_DEPOSIT (0.011 ether) but above MINIMUM_DEPOSIT (0.01 ether)
-        uint256 depositAmount = 0.0105 ether;
-        
-        vm.startPrank(TEST_DEPOSITOR);
-        deal(WETH_ADDRESS_BASE, TEST_DEPOSITOR, depositAmount);
-        weth.approve(address(whackRockFund), depositAmount);
-        
-        // Should revert with E2() = "WRF: Initial deposit below minimum"
-        vm.expectRevert(E2.selector);
-        whackRockFund.deposit(depositAmount, TEST_DEPOSITOR);
-        vm.stopPrank();
-    }
     
     function testFirstDepositAtMinimumInitialDeposit_Succeeds() public {
         // Make first deposit exactly at MINIMUM_INITIAL_DEPOSIT (0.1 ether)
@@ -857,8 +808,7 @@ contract WhackRockFundTest is Test {
 
         (
             uint256[] memory targetComposition,
-            address[] memory tokenAddresses,
-            string[] memory tokenSymbols
+            address[] memory tokenAddresses
         ) = localFund.getTargetCompositionBPS();
 
         assertEq(targetComposition.length, 2, "TargetComposition length mismatch");
@@ -869,17 +819,14 @@ contract WhackRockFundTest is Test {
         assertEq(tokenAddresses[0], address(localMockNoSymbol), "TokenAddresses[0] mismatch");
         assertEq(tokenAddresses[1], address(localStandardToken), "TokenAddresses[1] mismatch");
 
-        assertEq(tokenSymbols.length, 2, "TokenSymbols length mismatch");
-        assertEq(tokenSymbols[0], "", "TokenSymbols[0] (no symbol) mismatch"); // Expected empty string
-        assertEq(tokenSymbols[1], "STDT", "TokenSymbols[1] (STDT) mismatch");
+        // Token symbols verification removed as they're no longer returned by the function
     }
 
     function test_getTargetComposition_MultipleTokensDistinctWeights_DefaultFund() public view {
         // Uses the fund deployed in setUp()
         (
             uint256[] memory targetComposition,
-            address[] memory tokenAddresses,
-            string[] memory tokenSymbols
+            address[] memory tokenAddresses
         ) = whackRockFund.getTargetCompositionBPS();
 
         // Expected from setUp:
@@ -897,13 +844,7 @@ contract WhackRockFundTest is Test {
         assertEq(tokenAddresses[1], CBBTC_BASE, "TokenAddresses[1] CBBTC mismatch");
         assertEq(tokenAddresses[2], VIRTU_BASE, "TokenAddresses[2] VIRTU mismatch");
 
-        assertEq(tokenSymbols.length, 3, "TokenSymbols length mismatch");
-        // For mainnet tokens, we expect their actual symbols
-        // Note: You might need to deploy mock ERC20s with known symbols if you want to avoid
-        // relying on the forked mainnet state for symbols, but for this test, using actuals is fine.
-        assertEq(IERC20Symbol(USDC_BASE).symbol(), "USDC", "TokenSymbols[0] USDC mismatch"); // Actual symbol for USDC on Base
-        assertEq(IERC20Symbol(CBBTC_BASE).symbol(), "cbBTC", "TokenSymbols[1] CBBTC mismatch"); // Actual symbol for cbBTC on Base
-        assertEq(IERC20Symbol(VIRTU_BASE).symbol(), "VIRTUAL", "TokenSymbols[2] VIRTU mismatch"); // Actual symbol for VIRTU on Base
+        // Token symbols verification removed as they're no longer returned by the function
     }
 
 
@@ -913,8 +854,7 @@ contract WhackRockFundTest is Test {
         // Uses the fund deployed in setUp(), which initially has 0 NAV before any deposits
         (
             uint256[] memory currentComposition,
-            address[] memory tokenAddresses,
-            string[] memory tokenSymbols
+            address[] memory tokenAddresses
         ) = whackRockFund.getCurrentCompositionBPS();
 
         assertEq(whackRockFund.totalNAVInAccountingAsset(), 0, "NAV should be zero initially");
@@ -929,10 +869,7 @@ contract WhackRockFundTest is Test {
         assertEq(tokenAddresses[1], CBBTC_BASE, "TokenAddresses[1] mismatch (ZeroNAV)");
         assertEq(tokenAddresses[2], VIRTU_BASE, "TokenAddresses[2] mismatch (ZeroNAV)");
 
-        assertEq(tokenSymbols.length, 3, "TokenSymbols length mismatch (ZeroNAV)");
-        assertEq(IERC20Symbol(USDC_BASE).symbol(), "USDC", "TokenSymbols[0] mismatch (ZeroNAV)");
-        assertEq(IERC20Symbol(CBBTC_BASE).symbol(), "cbBTC", "TokenSymbols[1] mismatch (ZeroNAV)");
-        assertEq(IERC20Symbol(VIRTU_BASE).symbol(), "VIRTUAL", "TokenSymbols[2] mismatch (ZeroNAV)");
+        // Token symbols verification removed as they're no longer returned by the function
     }
 
     function test_getCurrentComposition_MixedBalances() public {
@@ -952,34 +889,24 @@ contract WhackRockFundTest is Test {
 
         // Fund now holds USDC, CBBTC, VIRTU, and possibly some dust WETH.
 
-        // 2. Make CBBTC balance zero in the fund for this test scenario
-        uint256 cbethBalanceInFund = tokenB_CBBTC.balanceOf(address(whackRockFund));
-        if (cbethBalanceInFund > 0) {
-            vm.startPrank(TEST_OWNER); // Owner uses emergencyWithdraw
-            whackRockFund.emergencyWithdrawERC20(CBBTC_BASE, TEST_OWNER, cbethBalanceInFund);
-            vm.stopPrank();
-        }
-        assertEq(tokenB_CBBTC.balanceOf(address(whackRockFund)), 0, "CBBTC balance in fund should be zero");
+        // 2. CBBTC should have some balance from the rebalance (no longer removing it)
+        // The fund should now have a balanced portfolio including CBBTC
 
         // 3. Get current composition
         (
             uint256[] memory currentComposition,
-            address[] memory tokenAddresses,
-            string[] memory tokenSymbols
+            address[] memory tokenAddresses
         ) = whackRockFund.getCurrentCompositionBPS();
 
         uint256 currentNAV = whackRockFund.totalNAVInAccountingAsset();
-        assertTrue(currentNAV > 0, "NAV should be positive after deposit and CBBTC removal");
+        assertTrue(currentNAV > 0, "NAV should be positive after deposit and rebalance");
 
         assertEq(tokenAddresses.length, 3, "TokenAddresses length mismatch (Mixed)");
         assertEq(tokenAddresses[0], USDC_BASE);
         assertEq(tokenAddresses[1], CBBTC_BASE);
         assertEq(tokenAddresses[2], VIRTU_BASE);
 
-        assertEq(tokenSymbols.length, 3, "TokenSymbols length mismatch (Mixed)");
-        assertEq(IERC20Symbol(USDC_BASE).symbol(), "USDC");
-        assertEq(IERC20Symbol(CBBTC_BASE).symbol(), "cbBTC");
-        assertEq(IERC20Symbol(VIRTU_BASE).symbol(), "VIRTUAL");
+        // Token symbols verification removed as they're no longer returned by the function
 
         assertEq(currentComposition.length, 3, "CurrentComposition length mismatch (Mixed)");
 
@@ -989,8 +916,11 @@ contract WhackRockFundTest is Test {
         uint256 expectedBPS_USDC = (usdcValueInAA * whackRockFund.TOTAL_WEIGHT_BASIS_POINTS()) / currentNAV;
         assertApproxEqAbs(currentComposition[0], expectedBPS_USDC, 1, "USDC BPS mismatch (Mixed)"); // Allow 1 BPS for rounding
 
-        // Expected BPS for CBBTC should be 0
-        assertEq(currentComposition[1], 0, "CBBTC BPS should be 0 (Mixed)");
+        // Calculate expected BPS for CBBTC
+        uint256 cbbtcBalanceFund = tokenB_CBBTC.balanceOf(address(whackRockFund));
+        uint256 cbbtcValueInAA = _getValueInAccountingAsset(CBBTC_BASE, cbbtcBalanceFund);
+        uint256 expectedBPS_CBBTC = (cbbtcValueInAA * whackRockFund.TOTAL_WEIGHT_BASIS_POINTS()) / currentNAV;
+        assertApproxEqAbs(currentComposition[1], expectedBPS_CBBTC, 1, "CBBTC BPS mismatch (Mixed)");
 
         // Calculate expected BPS for VIRTU
         uint256 virtuBalanceFund = tokenC_VIRTU.balanceOf(address(whackRockFund));

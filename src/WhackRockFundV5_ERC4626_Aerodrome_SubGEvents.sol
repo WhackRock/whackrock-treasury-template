@@ -503,44 +503,13 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         _rebalance();
     }
 
-    /**
-     * @notice Emergency function to withdraw ERC20 tokens
-     * @dev Only callable by owner, used in case of token airdrops or emergencies
-     * @param _tokenAddress Address of the token to withdraw
-     * @param _to Address to receive the withdrawn tokens
-     * @param _amount Amount of tokens to withdraw
-     */
-    function emergencyWithdrawERC20(address _tokenAddress, address _to, uint256 _amount) external onlyOwner {
-        if (_to == address(0)) revert E1();
-        IERC20 tokenToWithdraw = IERC20(_tokenAddress);
-        uint256 balance = tokenToWithdraw.balanceOf(address(this));
-        if (_amount > balance) revert E3();
-        tokenToWithdraw.safeTransfer(_to, _amount);
-        emit EmergencyWithdrawal(_tokenAddress, _amount);
-    }
-
-    /**
-     * @notice Emergency function to withdraw native ETH
-     * @dev Only callable by owner, used in case ETH is accidentally sent to the contract
-     * @param _to Address to receive the withdrawn ETH
-     * @param _amount Amount of ETH to withdraw
-     */
-    function emergencyWithdrawNative(address payable _to, uint256 _amount) external onlyOwner {
-        if (_to == address(0)) revert E1();
-        uint256 balance = address(this).balance;
-        if (_amount > balance) revert E3();
-        (bool success,) = _to.call{value: _amount}("");
-        if (!success) revert E6();
-    }
-
     
     /**
-     * @notice Gets the current composition of the fund's assets, including token addresses and symbols.
-     * @dev Returns arrays for current weights (BPS), token addresses, and token symbols.
+     * @notice Gets the current composition of the fund's assets.
+     * @dev Returns arrays for current weights (BPS) and token addresses.
      * The order in all arrays corresponds to the order of tokens in the `allowedTokens` array.
      * @return currentComposition_ An array of current weights in basis points.
      * @return tokenAddresses_ An array of the addresses of the allowed tokens.
-     * @return tokenSymbols_ An array of the symbols of the allowed tokens.
      */
     function getCurrentCompositionBPS()
         external
@@ -548,43 +517,29 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         view
         returns (
             uint256[] memory currentComposition_,
-            address[] memory tokenAddresses_,
-            string[] memory tokenSymbols_
+            address[] memory tokenAddresses_
         )
     {
         uint256 numAllowedTokens = allowedTokens.length;
         currentComposition_ = new uint256[](numAllowedTokens);
         tokenAddresses_ = new address[](numAllowedTokens);
-        tokenSymbols_ = new string[](numAllowedTokens);
 
         uint256 currentNAV = totalNAVInAccountingAsset();
 
         if (currentNAV == 0) {
             // If NAV is 0, all current weights are 0.
-            // Populate addresses and symbols even if NAV is 0.
+            // Populate addresses even if NAV is 0.
             for (uint256 i = 0; i < numAllowedTokens; i++) {
                 address currentTokenAddress = allowedTokens[i];
                 tokenAddresses_[i] = currentTokenAddress;
-                // Attempt to get symbol, will be empty string if token doesn't have symbol() or is address(0)
-                try IERC20Symbol(currentTokenAddress).symbol() returns (string memory symbol) {
-                    tokenSymbols_[i] = symbol;
-                } catch {
-                    tokenSymbols_[i] = ""; // Default to empty string if symbol call fails
-                }
                 // currentComposition_ is already initialized to zeros
             }
-            return (currentComposition_, tokenAddresses_, tokenSymbols_);
+            return (currentComposition_, tokenAddresses_);
         }
 
         for (uint256 i = 0; i < numAllowedTokens; i++) {
             address currentTokenAddress = allowedTokens[i];
             tokenAddresses_[i] = currentTokenAddress;
-
-            try IERC20Symbol(currentTokenAddress).symbol() returns (string memory symbol) {
-                tokenSymbols_[i] = symbol;
-            } catch {
-                tokenSymbols_[i] = ""; // Default to empty string
-            }
 
             uint256 tokenBalance = IERC20(currentTokenAddress).balanceOf(address(this));
 
@@ -596,16 +551,15 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
             uint256 tokenValueInAA = _getTokenValueInAccountingAsset(currentTokenAddress, tokenBalance);
             currentComposition_[i] = (tokenValueInAA * TOTAL_WEIGHT_BASIS_POINTS) / currentNAV;
         }
-        return (currentComposition_, tokenAddresses_, tokenSymbols_);
+        return (currentComposition_, tokenAddresses_);
     }
 
     /**
-     * @notice Gets the target composition of the fund's assets, including token addresses and symbols.
-     * @dev Returns arrays for target weights (BPS), token addresses, and token symbols.
+     * @notice Gets the target composition of the fund's assets.
+     * @dev Returns arrays for target weights (BPS) and token addresses.
      * The order in all arrays corresponds to the order of tokens in the `allowedTokens` array.
      * @return targetComposition_ An array of target weights in basis points.
      * @return tokenAddresses_ An array of the addresses of the allowed tokens.
-     * @return tokenSymbols_ An array of the symbols of the allowed tokens.
      */
     function getTargetCompositionBPS()
         external
@@ -613,28 +567,19 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         view
         returns (
             uint256[] memory targetComposition_,
-            address[] memory tokenAddresses_,
-            string[] memory tokenSymbols_
+            address[] memory tokenAddresses_
         )
     {
         uint256 numAllowedTokens = allowedTokens.length;
         targetComposition_ = new uint256[](numAllowedTokens);
         tokenAddresses_ = new address[](numAllowedTokens);
-        tokenSymbols_ = new string[](numAllowedTokens);
 
         for (uint256 i = 0; i < numAllowedTokens; i++) {
             address currentTokenAddress = allowedTokens[i];
             tokenAddresses_[i] = currentTokenAddress;
             targetComposition_[i] = targetWeights[currentTokenAddress];
-
-            // Attempt to get symbol, will be empty string if token doesn't have symbol() or is address(0)
-            try IERC20Symbol(currentTokenAddress).symbol() returns (string memory symbol) {
-                tokenSymbols_[i] = symbol;
-            } catch {
-                tokenSymbols_[i] = ""; // Default to empty string if symbol call fails
-            }
         }
-        return (targetComposition_, tokenAddresses_, tokenSymbols_);
+        return (targetComposition_, tokenAddresses_);
     }
 
     /**
@@ -645,7 +590,12 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
      */
     function _rebalance() internal {
         uint256 navBeforeRebalanceAA = totalNAVInAccountingAsset();
-        if (navBeforeRebalanceAA == 0) return;
+        if (navBeforeRebalanceAA == 0) {
+            // Emit event even when NAV is 0 for consistency
+            uint256 wethValueInUSDC = _getWETHValueInUSDC(1 ether);
+            emit RebalanceCycleExecuted(0, 0, block.timestamp, wethValueInUSDC);
+            return;
+        }
 
         TokenRebalanceInfo[] memory rebalanceInfos = new TokenRebalanceInfo[](allowedTokens.length);
 
@@ -852,12 +802,4 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable {
         return (needsRebalance, maxDeviationBPS);
     }
 
-}
-
-/**
-* @notice Minimal interface to fetch an ERC20 token's symbol.
-* @dev Standard IERC20 does not include symbol, but ERC20 contracts typically do.
-*/
-interface IERC20Symbol {
-    function symbol() external view returns (string memory);
 }

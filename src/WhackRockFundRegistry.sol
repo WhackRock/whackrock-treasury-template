@@ -26,7 +26,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import {IAerodromeRouter} from "./interfaces/IRouter.sol"; 
 import {IWhackRockFundRegistry} from "./interfaces/IWhackRockFundRegistry.sol";
-import {WhackRockFund} from "./WhackRockFundV5_ERC4626_Aerodrome_SubGEvents.sol"; 
+import {WhackRockFund} from "./WhackRockFundV6_Aerodrome.sol"; 
 
 /**
  * @title WhackRockFundRegistry
