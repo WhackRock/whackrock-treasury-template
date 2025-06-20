@@ -62,6 +62,165 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "This process might take a few minutes. Check the logs above for details and Basescan links."
     Write-Host "IMPORTANT: Contract addresses have been displayed in the logs above, and saved to the broadcast files." -ForegroundColor Yellow
     Write-Host "Broadcast file: broadcast/$($deploymentScriptName).s.sol/8453/run-latest.json" -ForegroundColor Yellow
+    
+    # --- VERIFY THE WHACKROCK FUND CREATED BY THE REGISTRY ---
+    Write-Host ""
+    Write-Host "=== Verifying WhackRockFund created by Registry ===" -ForegroundColor Cyan
+    
+    # Wait a moment for the broadcast file to be fully written
+    Start-Sleep -Seconds 2
+    
+    # Parse the broadcast file to find the fund address
+    $broadcastFile = "broadcast/$($deploymentScriptName).s.sol/8453/run-latest.json"
+    
+    if (Test-Path $broadcastFile) {
+        try {
+            $broadcastContent = Get-Content $broadcastFile -Raw | ConvertFrom-Json
+            
+            # Find the WhackRockFund creation transaction
+            $fundAddress = $null
+            $fundTransaction = $null
+            
+            foreach ($tx in $broadcastContent.transactions) {
+                if ($tx.contractName -eq "WhackRockFund") {
+                    $fundAddress = $tx.contractAddress
+                    $fundTransaction = $tx
+                    break
+                }
+            }
+            
+            if ($fundAddress) {
+                Write-Host "Found WhackRockFund at address: $fundAddress" -ForegroundColor Green
+                
+                # Get deployer address from broadcast
+                $deployerAddress = $broadcastContent.transactions[0].transaction.from
+                Write-Host "Deployer address: $deployerAddress" -ForegroundColor Gray
+                
+                # Extract constructor arguments from the createWhackRockFund call
+                $createFundTx = $null
+                foreach ($tx in $broadcastContent.transactions) {
+                    if ($tx.function -and $tx.function -like "*createWhackRockFund*") {
+                        $createFundTx = $tx
+                        break
+                    }
+                }
+                
+                if ($createFundTx -and $createFundTx.arguments) {
+                    Write-Host "Found createWhackRockFund transaction, extracting constructor args..." -ForegroundColor Gray
+                    
+                    # The constructor args for WhackRockFund are passed from the factory
+                    # We need to reconstruct them based on the createWhackRockFund call
+                    $args = $createFundTx.arguments
+                    
+                    # WhackRockFund constructor parameters (from factory call):
+                    # address _initialOwner,
+                    # address _initialAgent,
+                    # address _uniswapV3RouterAddress,
+                    # address _uniswapV3QuoterAddress,
+                    # address _uniswapV3FactoryAddress,
+                    # address _wethAddress,
+                    # address[] memory _fundAllowedTokens,
+                    # uint256[] memory _initialTargetWeights,
+                    # string memory _vaultName,
+                    # string memory _vaultSymbol,
+                    # string memory _vaultURI,
+                    # address _agentAumFeeWalletForFund,
+                    # uint256 _agentSetTotalAumFeeBps,
+                    # address _protocolAumFeeRecipientForFunds,
+                    # address _usdcTokenAddress,
+                    # string memory data
+                    
+                    # Use forge to encode the constructor arguments
+                    $encodeArgs = @(
+                        "abi-encode",
+                        "constructor(address,address,address,address,address,address,address[],uint256[],string,string,string,address,uint256,address,address,string)",
+                        $deployerAddress,  # _initialOwner
+                        $args[0],         # _initialAgent
+                        "0x2626664c2603336E57B271c5C0b26F421741e481", # uniswapV3Router
+                        "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a", # uniswapV3Quoter
+                        "0x33128a8fC17869897dcE68Ed026d694621f6FDfD", # uniswapV3Factory
+                        "0x4200000000000000000000000000000000000006", # WETH
+                        "[$($args[1] -join ',')]", # _fundAllowedTokens array
+                        "[$($args[2] -join ',')]", # _initialTargetWeights array
+                        "`"$($args[4])`"",        # _vaultName
+                        "`"$($args[5])`"",        # _vaultSymbol
+                        "`"$($args[6])`"",        # _vaultURI
+                        $args[8],                 # _agentAumFeeWalletForFund
+                        $args[9],                 # _agentSetTotalAumFeeBps
+                        "0x90cfB07A46EE4bb20C970Dda18AaD1BA3c9450Ae", # protocolAumFeeRecipient
+                        "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", # USDC
+                        "`"`""                    # empty data string
+                    )
+                    
+                    Write-Host "Encoding constructor arguments..." -ForegroundColor Gray
+                    $constructorArgsResult = & $forgeExecutable $encodeArgs 2>&1
+                    
+                    if ($LASTEXITCODE -eq 0 -and $constructorArgsResult) {
+                        $constructorArgs = $constructorArgsResult.Trim() -replace "^0x", ""
+                        Write-Host "Constructor args encoded successfully" -ForegroundColor Green
+                    } else {
+                        Write-Host "Failed to encode constructor args, using fallback method" -ForegroundColor Yellow
+                        # Fallback: construct manually based on deployment script values
+                        $constructorArgs = "000000000000000000000000$($deployerAddress.Substring(2))" + 
+                                          "000000000000000000000000$($deployerAddress.Substring(2))" +
+                                          "0000000000000000000000002626664c2603336e57b271c5c0b26f421741e481" +
+                                          "0000000000000000000000003d4e44eb1374240ce5f1b871ab261cd16335b76a" +
+                                          "00000000000000000000000033128a8fc17869897dce68ed026d694621f6fdfd" +
+                                          "0000000000000000000000004200000000000000000000000000000000000006"
+                        # Add more encoded args as needed...
+                    }
+                } else {
+                    Write-Host "Could not extract constructor arguments from broadcast file" -ForegroundColor Yellow
+                    Write-Host "Using default constructor args based on deployment script" -ForegroundColor Gray
+                    
+                    # Use hardcoded values from the deployment script
+                    $constructorArgs = "000000000000000000000000$($deployerAddress.Substring(2).ToLower())" +
+                                      "000000000000000000000000$($deployerAddress.Substring(2).ToLower())" +
+                                      "0000000000000000000000002626664c2603336e57b271c5c0b26f421741e481" +
+                                      "0000000000000000000000003d4e44eb1374240ce5f1b871ab261cd16335b76a" +
+                                      "00000000000000000000000033128a8fc17869897dce68ed026d694621f6fdfd" +
+                                      "0000000000000000000000004200000000000000000000000000000000000006"
+                }
+                
+                Write-Host "Attempting to verify WhackRockFund..." -ForegroundColor Yellow
+                
+                # Run forge verify-contract command for the UniSwap TWAP version
+                $verifyArgs = @(
+                    "verify-contract",
+                    $fundAddress,
+                    "src/WhackRockFundV6_UniSwap_TWAP.sol:WhackRockFund",
+                    "--chain", "8453",
+                    "--etherscan-api-key", $actualBasescanApiKey,
+                    "--constructor-args", "0x$constructorArgs",
+                    "--watch"
+                )
+                
+                Write-Host "Executing: $forgeExecutable $($verifyArgs -join ' ')"
+                & $forgeExecutable $verifyArgs
+                
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "WhackRockFund verification submitted successfully!" -ForegroundColor Green
+                } else {
+                    Write-Host "WhackRockFund verification failed. You may need to verify manually." -ForegroundColor Yellow
+                    Write-Host "Fund Address: $fundAddress" -ForegroundColor Gray
+                    Write-Host "Manual verification command:" -ForegroundColor Gray
+                    Write-Host "forge verify-contract $fundAddress src/WhackRockFundV6_UniSwap_TWAP.sol:WhackRockFund --chain 8453 --constructor-args 0x$constructorArgs --etherscan-api-key <YOUR_API_KEY>" -ForegroundColor Gray
+                }
+                
+            } else {
+                Write-Host "Could not find WhackRockFund address in broadcast file." -ForegroundColor Yellow
+                Write-Host "The fund may need to be verified manually after checking the deployment logs." -ForegroundColor Yellow
+            }
+            
+        } catch {
+            Write-Host "Error parsing broadcast file: $_" -ForegroundColor Red
+            Write-Host "WhackRockFund will need to be verified manually." -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "Broadcast file not found: $broadcastFile" -ForegroundColor Yellow
+        Write-Host "WhackRockFund will need to be verified manually." -ForegroundColor Yellow
+    }
+    
 } else {
     Write-Host "Deployment or Verification submission failed. Check the logs for errors." -ForegroundColor Red
 }
