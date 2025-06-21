@@ -778,10 +778,9 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
      */
     function _approveTokenIfNeeded(IERC20 _tokenContract, address _spender, uint256 _amount) internal {
         if (_tokenContract.allowance(address(this), _spender) < _amount) {
-            _tokenContract.approve(_spender, _amount);
+            _tokenContract.forceApprove(_spender, _amount);
         }
     }
-
     
     /**
      * @notice Gets the value of a token amount in WETH units (accounting asset)
