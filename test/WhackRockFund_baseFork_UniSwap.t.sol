@@ -467,6 +467,7 @@ contract WhackRockFundUniswapTest is Test {
         uint256 protocolBalanceBefore = fund.balanceOf(PROTOCOL_FEE_RECIPIENT);
         
         // Collect AUM fee
+        vm.prank(FUND_OWNER); // Only owner can collect fees
         fund.collectAgentManagementFee();
         
         uint256 agentBalanceAfter = fund.balanceOf(AGENT_FEE_WALLET);

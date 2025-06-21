@@ -108,6 +108,9 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
 
     /// @notice Total basis points representing 100% (10000)
     uint256 public constant TOTAL_WEIGHT_BASIS_POINTS = 10000;
+
+    /// @notice Maximum fee rate allowed (10%)
+    uint256 public constant MAX_FEE_BASIS_POINTS = 1000;
     
     /// @notice Percentage of AUM fee allocated to the agent (60%)
     uint256 public constant AGENT_AUM_FEE_SHARE_BPS = 6000;
@@ -207,6 +210,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
         uniswapV3Quoter = IUniswapV3Quoter(_uniswapV3QuoterAddress);
         allowedTokens = _initialAllowedTokens;
         agentAumFeeWallet = _agentAumFeeWallet;
+        require(_totalAgentAumFeeBpsRate <= MAX_FEE_BASIS_POINTS, "Invalid AUM fee rate"); // Ensure fee rate is valid
         agentAumFeeBps = _totalAgentAumFeeBpsRate;
         protocolAumFeeRecipient = _protocolAumFeeRecipientAddress;
         lastAgentAumFeeCollectionTimestamp = block.timestamp;
@@ -604,17 +608,170 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
     }
 
     /**
+     * @notice Safely gets NAV with error handling
+     * @return nav The NAV value or 0 if failed
+     */
+    function _safeGetNAV() internal view returns (uint256 nav) {
+        try this.totalNAVInAccountingAsset() returns (uint256 value) {
+            return value;
+        } catch {
+            return 0;
+        }
+    }
+
+    /**
+     * @notice Safely gets token balance with error handling
+     * @param token Token address
+     * @return balance The token balance or 0 if failed
+     */
+    function _safeGetTokenBalance(address token) internal view returns (uint256 balance) {
+        try IERC20(token).balanceOf(address(this)) returns (uint256 value) {
+            return value;
+        } catch {
+            return 0;
+        }
+    }
+
+    /**
+     * @notice Safely gets token value in accounting asset with error handling
+     * @param token Token address
+     * @param amount Token amount
+     * @return value The value in accounting asset or 0 if failed
+     */
+    function _safeGetTokenValue(address token, uint256 amount) internal view returns (uint256 value) {
+        if (amount == 0) return 0;
+        if (token == WETH_ADDRESS) return 0;
+
+        try this.getTokenValueInWETH(token, amount, DEFAULT_POOL_FEE) returns (uint256 val) {
+            return val;
+        } catch {
+            try this.getTokenValueInWETH(token, amount, 500) returns (uint256 val) {
+                return val;
+            } catch {
+                try this.getTokenValueInWETH(token, amount, 10000) returns (uint256 val) {
+                    return val;
+                } catch {
+                    return 0;
+                }
+            }
+        }
+    }
+
+    /**
+     * @notice Safely gets WETH value in USDC with error handling
+     * @param wethAmount WETH amount
+     * @return value The USDC value or 0 if failed
+     */
+    function _safeGetWETHValueInUSDC(uint256 wethAmount) internal view returns (uint256 value) {
+        if (wethAmount == 0) return 0;
+        
+        try this.getWETHValueInToken(USDC_ADDRESS, wethAmount, DEFAULT_POOL_FEE) returns (uint256 val) {
+            return val;
+        } catch {
+            try this.getWETHValueInToken(USDC_ADDRESS, wethAmount, 500) returns (uint256 val) {
+                return val;
+            } catch {
+                try this.getWETHValueInToken(USDC_ADDRESS, wethAmount, 10000) returns (uint256 val) {
+                    return val;
+                } catch {
+                    return 0;
+                }
+            }
+        }
+    }
+
+    /**
+     * @notice Safely performs token swap with error handling
+     * @param tokenIn Input token address
+     * @param tokenOut Output token address
+     * @param amountIn Amount to swap
+     * @param slippageBps Slippage tolerance
+     * @return success True if swap succeeded
+     */
+    function _safeSwapTokens(address tokenIn, address tokenOut, uint256 amountIn, uint256 slippageBps) internal returns (bool success) {
+        if (amountIn == 0) return true;
+        if (tokenIn == tokenOut) return false;
+
+        uint24 bestFee = DEFAULT_POOL_FEE;
+        try this.getMostLiquidPool(tokenIn, tokenOut) returns (uint24 fee, address) {
+            bestFee = fee;
+        } catch {
+        }
+
+        uint256 expectedAmountOut;
+        if (tokenOut == WETH_ADDRESS) {
+            try this.getTokenValueInWETH(tokenIn, amountIn, bestFee) returns (uint256 amount) {
+                expectedAmountOut = amount;
+            } catch {
+                return false;
+            }
+        } else if (tokenIn == WETH_ADDRESS) {
+            try this.getWETHValueInToken(tokenOut, amountIn, bestFee) returns (uint256 amount) {
+                expectedAmountOut = amount;
+            } catch {
+                return false;
+            }
+        } else {
+            try this.getTWAPPrice(tokenIn, tokenOut, amountIn, bestFee) returns (uint256 amount) {
+                expectedAmountOut = amount;
+            } catch {
+                return false;
+            }
+        }
+
+        if (expectedAmountOut == 0) return false;
+        
+        uint256 amountOutMin = (expectedAmountOut * (TOTAL_WEIGHT_BASIS_POINTS - slippageBps)) / TOTAL_WEIGHT_BASIS_POINTS;
+
+        address pool = uniswapV3Factory.getPool(tokenIn, tokenOut, bestFee);
+        if (pool == address(0)) return false;
+        
+        bool zeroForOne = tokenIn < tokenOut;
+        bytes memory data = abi.encode(tokenIn, tokenOut, bestFee);
+        
+        uint160 sqrtPriceLimitX96 = zeroForOne 
+            ? uint160(4295128740)
+            : uint160(1461446703485210103287273052203988822378723970340);
+        
+        try IUniswapV3Pool(pool).swap(
+            address(this),
+            zeroForOne,
+            int256(amountIn),
+            sqrtPriceLimitX96,
+            data
+        ) returns (int256 amount0, int256 amount1) {
+            uint256 amountOut = uint256(-(zeroForOne ? amount1 : amount0));
+            
+            if (amountOut < amountOutMin) return false;
+            
+            emit FundTokenSwapped(tokenIn, amountIn, tokenOut, amountOut);
+            return true;
+        } catch (bytes memory reason) {
+            emit SwapFailed(tokenIn, tokenOut, amountIn, reason);
+            return false;
+        }
+    }
+
+    /**
+     * @notice Emits rebalance event with safe value retrieval
+     * @param navBefore NAV before rebalance
+     */
+    function _emitRebalanceEvent(uint256 navBefore) internal {
+        uint256 navAfter = _safeGetNAV();
+        uint256 wethUsdcValue = _safeGetWETHValueInUSDC(1 ether);
+        emit RebalanceCycleExecuted(navBefore, navAfter, block.timestamp, wethUsdcValue);
+    }
+
+    /**
      * @notice Rebalances the fund's assets to match target weights
      * @dev First sells tokens that are overweight, then buys tokens that are underweight
      *      Uses a two-step process to minimize price impact
      *      Always emits RebalanceCycleExecuted event when rebalancing occurs
      */
     function _rebalance() internal {
-        uint256 navBeforeRebalanceAA = totalNAVInAccountingAsset();
+        uint256 navBeforeRebalanceAA = _safeGetNAV();
         if (navBeforeRebalanceAA == 0) {
-            // Emit event even when NAV is 0 for consistency
-            uint256 wethUsdcValue = _getWETHValueInUSDC(1 ether);
-            emit RebalanceCycleExecuted(0, 0, block.timestamp, wethUsdcValue);
+            _emitRebalanceEvent(0);
             return;
         }
 
@@ -623,9 +780,8 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
         for (uint256 i = 0; i < allowedTokens.length; i++) {
             address currentToken = allowedTokens[i];
             rebalanceInfos[i].token = currentToken;
-            rebalanceInfos[i].currentBalance = IERC20(currentToken).balanceOf(address(this));
-            rebalanceInfos[i].currentValueInAccountingAsset =
-                _getTokenValueInAccountingAsset(currentToken, rebalanceInfos[i].currentBalance);
+            rebalanceInfos[i].currentBalance = _safeGetTokenBalance(currentToken);
+            rebalanceInfos[i].currentValueInAccountingAsset = _safeGetTokenValue(currentToken, rebalanceInfos[i].currentBalance);
             rebalanceInfos[i].targetValueInAccountingAsset =
                 (navBeforeRebalanceAA * targetWeights[currentToken]) / TOTAL_WEIGHT_BASIS_POINTS;
             rebalanceInfos[i].deltaValueInAccountingAsset = int256(rebalanceInfos[i].targetValueInAccountingAsset)
@@ -646,22 +802,31 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
                     amountToSellInTokenUnits = 0;
                 }
                 if (amountToSellInTokenUnits == 0) continue;
-                amountToSellInTokenUnits =
-                    Math.min(amountToSellInTokenUnits, IERC20(rebalanceInfos[i].token).balanceOf(address(this)));
+                
+                uint256 actualBalance = _safeGetTokenBalance(rebalanceInfos[i].token);
+                amountToSellInTokenUnits = Math.min(amountToSellInTokenUnits, actualBalance);
                 if (amountToSellInTokenUnits == 0) continue;
-                _swapTokens(rebalanceInfos[i].token, WETH_ADDRESS, amountToSellInTokenUnits, DEFAULT_SLIPPAGE_BPS);
+                
+                _safeSwapTokens(rebalanceInfos[i].token, WETH_ADDRESS, amountToSellInTokenUnits, DEFAULT_SLIPPAGE_BPS);
             }
         }
 
-        uint256 availableAccountingAssetForBuys = IERC20(WETH_ADDRESS).balanceOf(address(this));
-        if (availableAccountingAssetForBuys == 0) return;
+        uint256 availableAccountingAssetForBuys = _safeGetTokenBalance(WETH_ADDRESS);
+        if (availableAccountingAssetForBuys == 0) {
+            _emitRebalanceEvent(navBeforeRebalanceAA);
+            return;
+        }
+        
         uint256 totalAccountingAssetNeededForBuys = 0;
         for (uint256 i = 0; i < rebalanceInfos.length; i++) {
             if (rebalanceInfos[i].deltaValueInAccountingAsset > 0) {
                 totalAccountingAssetNeededForBuys += uint256(rebalanceInfos[i].deltaValueInAccountingAsset);
             }
         }
-        if (totalAccountingAssetNeededForBuys == 0) return;
+        if (totalAccountingAssetNeededForBuys == 0) {
+            _emitRebalanceEvent(navBeforeRebalanceAA);
+            return;
+        }
 
         for (uint256 i = 0; i < rebalanceInfos.length; i++) {
             if (rebalanceInfos[i].deltaValueInAccountingAsset > 0) {
@@ -669,17 +834,16 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
                 uint256 actualAAToSpend = (
                     idealAAToSpend * Math.min(availableAccountingAssetForBuys, totalAccountingAssetNeededForBuys)
                 ) / totalAccountingAssetNeededForBuys;
-                uint256 currentAABalance = IERC20(WETH_ADDRESS).balanceOf(address(this));
+                
+                uint256 currentAABalance = _safeGetTokenBalance(WETH_ADDRESS);
                 actualAAToSpend = Math.min(actualAAToSpend, currentAABalance);
                 if (actualAAToSpend == 0) continue;
-                _swapTokens(WETH_ADDRESS, rebalanceInfos[i].token, actualAAToSpend, DEFAULT_SLIPPAGE_BPS);
+                
+                _safeSwapTokens(WETH_ADDRESS, rebalanceInfos[i].token, actualAAToSpend, DEFAULT_SLIPPAGE_BPS);
             }
         }
 
-        // Emit rebalance cycle executed event
-        uint256 navAfterRebalanceAA = totalNAVInAccountingAsset();
-        uint256 wethValueInUSDC = _getWETHValueInUSDC(1 ether);
-        emit RebalanceCycleExecuted(navBeforeRebalanceAA, navAfterRebalanceAA, block.timestamp, wethValueInUSDC);
+        _emitRebalanceEvent(navBeforeRebalanceAA);
     }
 
     /**
@@ -804,7 +968,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
                 try this.getTokenValueInWETH(_token, _amount, 10000) returns (uint256 value) {
                     return value;
                 } catch {
-                    revert E6();
+                    return 0;
                 }
             }
         }
