@@ -20,13 +20,13 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
-import {IUniswapV3Router, IUniswapV3Quoter} from "./interfaces/IUniswapV3Router.sol";
+import {IUniswapV3Router, IUniswapV3Quoter} from "../interfaces/IUniswapV3Router.sol";
 import {ISwapRouter} from "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import {IUniswapV3SwapCallback} from "@uniswap/v3-core/contracts/interfaces/callback/IUniswapV3SwapCallback.sol";
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-import {IAerodromeRouter} from "./interfaces/IRouter.sol";
-import {IWhackRockFund} from "./interfaces/IWhackRockFund.sol";
-import {UniswapV3TWAPOracle} from "./UniswapV3TWAPOracle.sol"; 
+import {IAerodromeRouter} from "../interfaces/IRouter.sol";
+import {IWhackRockFund} from "../interfaces/IWhackRockFund.sol";
+import {UniswapV3TWAPOracle} from "../oracle/UniswapV3TWAPOracle.sol"; 
 
 /**
  * @title WhackRockFund

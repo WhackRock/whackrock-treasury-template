@@ -5,8 +5,8 @@ import "forge-std/Script.sol";
 import "forge-std/console.sol";
 
 // Contracts to be deployed
-import {WhackRockFundRegistry} from "../src/WhackRockFundRegistry.sol";
-import {WhackRockFundFactory} from "../src/WhackRockFundFactory.sol";
+import {WhackRockFundRegistry} from "../src/factory/WhackRockFundRegistry.sol";
+import {WhackRockFundFactory} from "../src/factory/WhackRockFundFactory.sol";
 
 // For deploying UUPS proxy
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";

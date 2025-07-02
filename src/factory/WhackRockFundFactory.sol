@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.20;
 
-import {WhackRockFund} from "./WhackRockFundV6_UniSwap_TWAP.sol";
-import {IWhackRockFundFactory} from "./interfaces/IWhackRockFundFactory.sol";
+import {WhackRockFund} from "../funds/WhackRockFundV6_UniSwap_TWAP.sol";
+import {IWhackRockFundFactory} from "../interfaces/IWhackRockFundFactory.sol";
 
 /*
  *  

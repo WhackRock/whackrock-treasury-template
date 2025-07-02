@@ -5,8 +5,8 @@ import "forge-std/Test.sol";
 import "forge-std/console.sol";
 
 // Import our Uniswap V3 contracts
-import {WhackRockFund} from "../src/WhackRockFundV6_UniSwap_TWAP.sol";
-import {UniswapV3TWAPOracle} from "../src/UniswapV3TWAPOracle.sol";
+import {WhackRockFund} from "../src/funds/WhackRockFundV6_UniSwap_TWAP.sol";
+import {UniswapV3TWAPOracle} from "../src/oracle/UniswapV3TWAPOracle.sol";
 import {IUniswapV3Router, IUniswapV3Quoter} from "../src/interfaces/IUniswapV3Router.sol";
 import {ISwapRouter} from "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import {IQuoterV2} from "@uniswap/v3-periphery/contracts/interfaces/IQuoterV2.sol";

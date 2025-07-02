@@ -5,8 +5,8 @@ import "forge-std/Test.sol";
 import "forge-std/console.sol";
 
 // Adjust import paths based on your project structure
-import {WhackRockFundRegistry, IWhackRockFundRegistry} from "../src/WhackRockFundRegistry.sol"; // Assuming this is your UUPS upgradeable registry
-import {WhackRockFundFactory} from "../src/WhackRockFundFactory.sol";
+import {WhackRockFundRegistry, IWhackRockFundRegistry} from "../src/factory/WhackRockFundRegistry.sol"; // Assuming this is your UUPS upgradeable registry
+import {WhackRockFundFactory} from "../src/factory/WhackRockFundFactory.sol";
 // import {WhackRockFund} from "../src/WhackRockFundV5_ERC4626_Aerodrome_SubGEvents.sol"; 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IAerodromeRouter} from "../src/interfaces/IRouter.sol";

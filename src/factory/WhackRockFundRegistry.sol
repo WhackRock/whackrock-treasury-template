@@ -24,10 +24,10 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {IERC20} from '@openzeppelin/contracts/interfaces/IERC20.sol';
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol"; // Added for USDC_TOKEN
 
-import {IUniswapV3Router, IUniswapV3Quoter} from "./interfaces/IUniswapV3Router.sol";
+import {IUniswapV3Router, IUniswapV3Quoter} from "../interfaces/IUniswapV3Router.sol";
 import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
-import {IWhackRockFundRegistry} from "./interfaces/IWhackRockFundRegistry.sol";
-import {IWhackRockFundFactory} from "./interfaces/IWhackRockFundFactory.sol"; 
+import {IWhackRockFundRegistry} from "../interfaces/IWhackRockFundRegistry.sol";
+import {IWhackRockFundFactory} from "../interfaces/IWhackRockFundFactory.sol"; 
 
 /**
  * @title WhackRockFundRegistry
