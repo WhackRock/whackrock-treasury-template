@@ -1,5 +1,19 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.19;
+
+/*
+ *  
+ *   oooooo   oooooo     oooo ooooo   ooooo       .o.         .oooooo.   oooo    oooo ooooooooo.     .oooooo.     .oooooo.   oooo    oooo 
+ *   `888.    `888.     .8'  `888'   `888'      .888.       d8P'  `Y8b  `888   .8P'  `888   `Y88.  d8P'  `Y8b   d8P'  `Y8b  `888   .8P'  
+ *    `888.   .8888.   .8'    888     888      .8"888.     888           888  d8'     888   .d88' 888      888 888           888  d8'    
+ *     `888  .8'`888. .8'     888ooooo888     .8' `888.    888           88888[       888ooo88P'  888      888 888           88888[      
+ *      `888.8'  `888.8'      888     888    .88ooo8888.   888           888`88b.     888`88b.    888      888 888           888`88b.    
+ *       `888'    `888'       888     888   .8'     `888.  `88b    ooo   888  `88b.   888  `88b.  `88b    d88' `88b    ooo   888  `88b.  
+ *        `8'      `8'       o888o   o888o o88o     o8888o  `Y8bood8P'  o888o  o888o o888o  o888o  `Y8bood8P'   `Y8bood8P'  o888o  o888o 
+ *  
+ *    POINTS REDEEMER
+ *    © 2024 WhackRock Labs – All rights reserved.
+ */
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
@@ -7,8 +21,9 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+
 /**
- * @notice Interface for interacting with the WROCKStaking contract
+ * @notice Interface for interacting with the WhackRockStaking contract
  */
 interface IWROCKStaking {
     /**
@@ -30,12 +45,12 @@ interface IWROCKStaking {
  * @title PointsRedeemer
  * @author WROCK Team
  * @notice This contract handles the redemption of staking points for reward tokens
- * @dev Integrates with WROCKStaking to verify and deduct points, then distributes rewards
+ * @dev Integrates with WhackRockStaking to verify and deduct points, then distributes rewards
  * The owner can configure reward tokens, redemption rates, and enable/disable redemptions
  */
 contract PointsRedeemer is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
-    /// @notice Reference to the WROCKStaking contract
+    /// @notice Reference to the WhackRockStaking contract
     IWROCKStaking public immutable stakingContract;
     
     /// @notice The ERC20 token distributed as rewards
@@ -135,7 +150,7 @@ contract PointsRedeemer is Ownable, ReentrancyGuard, Pausable {
     
     /**
      * @notice Initializes the redeemer with the staking contract address
-     * @param _stakingContract Address of the WROCKStaking contract
+     * @param _stakingContract Address of the WhackRockStaking contract
      */
     constructor(address _stakingContract) Ownable(msg.sender) {
         stakingContract = IWROCKStaking(_stakingContract);

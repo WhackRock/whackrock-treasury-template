@@ -3,7 +3,7 @@ pragma solidity ^0.8.19;
 
 import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
-import {WROCKStaking} from "../src/staking/WROCKStaking.sol";
+import {WhackRockStaking} from "../src/staking/WhackRockStaking.sol";
 import {PointsRedeemer} from "../src/staking/PointsRedeemer.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -20,7 +20,7 @@ contract MockERC20 is ERC20 {
 }
 
 contract StakingTest is Test {
-    WROCKStaking public stakingContract;
+    WhackRockStaking public stakingContract;
     PointsRedeemer public redeemer;
     MockERC20 public stakingToken;
     MockERC20 public rewardToken;
@@ -69,7 +69,7 @@ contract StakingTest is Test {
         rewardToken = new MockERC20("Reward Token", "REWARD");
         
         // Deploy contracts
-        stakingContract = new WROCKStaking(address(stakingToken));
+        stakingContract = new WhackRockStaking(address(stakingToken));
         redeemer = new PointsRedeemer(address(stakingContract));
         
         // Setup token balances
@@ -104,7 +104,7 @@ contract StakingTest is Test {
         
         stakingContract.stake(100 * 10**18, MINIMUM_STAKE_DURATION);
         
-        (uint256 amount, uint256 startTime, uint256 lockDuration, uint256 currentPoints, bool canWithdraw) = 
+        (uint256 amount, , uint256 lockDuration, uint256 currentPoints, bool canWithdraw) = 
             stakingContract.getStakeInfo(user1);
             
         assertEq(amount, 100 * 10**18);

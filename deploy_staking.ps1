@@ -69,9 +69,9 @@ if ($LASTEXITCODE -eq 0) {
     $redeemerAddress = $null
     
     foreach ($line in $outputLines) {
-        if ($line -match "WROCKStaking deployed at:\s*(0x[a-fA-F0-9]{40})") {
+        if ($line -match "WhackRockStaking deployed at:\s*(0x[a-fA-F0-9]{40})") {
             $stakingAddress = $matches[1]
-            Write-Host "Found WROCKStaking address: $stakingAddress" -ForegroundColor Green
+            Write-Host "Found WhackRockStaking address: $stakingAddress" -ForegroundColor Green
         }
         elseif ($line -match "PointsRedeemer deployed at:\s*(0x[a-fA-F0-9]{40})") {
             $redeemerAddress = $matches[1]
@@ -82,7 +82,7 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host ""
     Write-Host "=== Contract Summary ===" -ForegroundColor Cyan
     if ($stakingAddress) {
-        Write-Host "WROCKStaking: $stakingAddress" -ForegroundColor Green
+        Write-Host "WhackRockStaking: $stakingAddress" -ForegroundColor Green
         Write-Host "Basescan: https://basescan.org/address/$stakingAddress" -ForegroundColor Cyan
     }
     if ($redeemerAddress) {
@@ -96,8 +96,8 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host ""
     
     if ($stakingAddress) {
-        Write-Host "WROCKStaking verification:" -ForegroundColor Cyan
-        Write-Host "forge verify-contract $stakingAddress src/staking/WROCKStaking.sol:WROCKStaking --chain 8453 --constructor-args \$(cast abi-encode \"constructor(address)\" \"0x2626664c2603336E57B271c5C0b26F421741e481\") --etherscan-api-key $($env:BASESCAN_API_KEY)" -ForegroundColor Gray
+        Write-Host "WhackRockStaking verification:" -ForegroundColor Cyan
+        Write-Host "forge verify-contract $stakingAddress src/staking/WhackRockStaking.sol:WhackRockStaking --chain 8453 --constructor-args \$(cast abi-encode \"constructor(address)\" \"0x2626664c2603336E57B271c5C0b26F421741e481\") --etherscan-api-key $($env:BASESCAN_API_KEY)" -ForegroundColor Gray
         Write-Host ""
     }
     
@@ -110,7 +110,7 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "=== Configuration Steps ===" -ForegroundColor Yellow
     Write-Host "After deployment, you need to:"
     Write-Host "1. Wait 48 hours for timelock delay"
-    Write-Host "2. Execute the queued setPointsRedeemer operation on WROCKStaking"
+    Write-Host "2. Execute the queued setPointsRedeemer operation on WhackRockStaking"
     Write-Host "3. Set reward token in PointsRedeemer contract"
     Write-Host "4. Deposit reward tokens to PointsRedeemer"
     Write-Host "5. Enable redemption when ready"
@@ -128,7 +128,7 @@ if ($LASTEXITCODE -eq 0) {
 
 Write-Host ""
 Write-Host "=== Important Notes ===" -ForegroundColor Cyan
-Write-Host "- The WROCKStaking contract uses a 48-hour timelock for admin functions"
+Write-Host "- The WhackRockStaking contract uses a 48-hour timelock for admin functions"
 Write-Host "- Both contracts have pausable functionality for emergencies"
 Write-Host "- All token transfers use SafeERC20 for security"
 Write-Host "- ReentrancyGuard is implemented on all external functions"

@@ -3,7 +3,7 @@ pragma solidity ^0.8.19;
 
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
-import {WROCKStaking} from "../src/staking/WROCKStaking.sol";
+import {WhackRockStaking} from "../src/staking/WhackRockStaking.sol";
 import {PointsRedeemer} from "../src/staking/PointsRedeemer.sol";
 
 contract DeployStaking is Script {
@@ -23,10 +23,10 @@ contract DeployStaking is Script {
         
         vm.startBroadcast(deployerPrivateKey);
         
-        // Deploy WROCKStaking contract
-        console.log("Deploying WROCKStaking...");
-        WROCKStaking stakingContract = new WROCKStaking(WROCK_TOKEN);
-        console.log("WROCKStaking deployed at:", address(stakingContract));
+        // Deploy WhackRockStaking contract
+        console.log("Deploying WhackRockStaking...");
+        WhackRockStaking stakingContract = new WhackRockStaking(WROCK_TOKEN);
+        console.log("WhackRockStaking deployed at:", address(stakingContract));
         
         // Deploy PointsRedeemer contract
         console.log("Deploying PointsRedeemer...");
@@ -45,7 +45,7 @@ contract DeployStaking is Script {
         
         console.log("");
         console.log("=== Deployment Summary ===");
-        console.log("WROCKStaking:", address(stakingContract));
+        console.log("WhackRockStaking:", address(stakingContract));
         console.log("PointsRedeemer:", address(redeemer));
         console.log("Redeemer setup queued (48hr timelock)");
         console.log("");
@@ -57,7 +57,7 @@ contract DeployStaking is Script {
         console.log("4. Enable redemption when ready");
         console.log("");
         console.log("=== Contract Verification ===");
-        console.log("WROCKStaking constructor args:");
+        console.log("WhackRockStaking constructor args:");
         console.log("- stakingToken:", WROCK_TOKEN);
         console.log("");
         console.log("PointsRedeemer constructor args:");
