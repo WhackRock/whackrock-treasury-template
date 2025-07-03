@@ -11,7 +11,7 @@ pragma solidity ^0.8.20;
  *       `888'    `888'       888     888   .8'     `888.  `88b    ooo   888  `88b.   888  `88b.  `88b    d88' `88b    ooo   888  `88b.  
  *        `8'      `8'       o888o   o888o o88o     o8888o  `Y8bood8P'  o888o  o888o o888o  o888o  `Y8bood8P'   `Y8bood8P'  o888o  o888o 
  *  
- *    WHACKROCK – FUND REGISTRY AND FACTORY UPGRADABLE   
+ *    WHACKROCK – FUND UPGRADABLE REGISTRY    
  *    © 2024 WhackRock Labs – All rights reserved.
  */
  
@@ -24,9 +24,10 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {IERC20} from '@openzeppelin/contracts/interfaces/IERC20.sol';
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol"; // Added for USDC_TOKEN
 
-import {IAerodromeRouter} from "./interfaces/IRouter.sol"; 
-import {IWhackRockFundRegistry} from "./interfaces/IWhackRockFundRegistry.sol";
-import {WhackRockFund} from "./WhackRockFundV6_Aerodrome.sol"; 
+import {IUniswapV3Router, IUniswapV3Quoter} from "../interfaces/IUniswapV3Router.sol";
+import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
+import {IWhackRockFundRegistry} from "../interfaces/IWhackRockFundRegistry.sol";
+import {IWhackRockFundFactory} from "../interfaces/IWhackRockFundFactory.sol"; 
 
 /**
  * @title WhackRockFundRegistry
@@ -37,11 +38,20 @@ import {WhackRockFund} from "./WhackRockFundV6_Aerodrome.sol";
 contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgradeable, IWhackRockFundRegistry {
     using SafeERC20 for IERC20; // Use standard SafeERC20 with standard IERC20
 
-    /// @notice Aerodrome DEX router used for fund operations
-    IAerodromeRouter public aerodromeRouter; 
+    /// @notice Uniswap V3 router used for fund operations
+    IUniswapV3Router public uniswapV3Router;
     
-    /// @notice Wrapped ETH address derived from the Aerodrome router
+    /// @notice Uniswap V3 quoter for price quotes
+    IUniswapV3Quoter public uniswapV3Quoter;
+    
+    /// @notice Uniswap V3 factory for pool creation
+    IUniswapV3Factory public uniswapV3Factory;
+    
+    /// @notice Wrapped ETH address (hardcoded accounting asset)
     address public WETH_ADDRESS;
+    
+    /// @notice Factory contract for creating fund instances
+    IWhackRockFundFactory public fundFactory;
 
     // Fee parameters
     /// @notice USDC token used for protocol fees
@@ -94,7 +104,11 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
      * @notice Initializes the registry with its required parameters
      * @dev This replaces the constructor for upgradeable contracts
      * @param _initialOwner Address of the initial owner
-     * @param _aerodromeRouterAddress Address of the Aerodrome router
+     * @param _uniswapV3RouterAddress Address of the Uniswap V3 router
+     * @param _uniswapV3QuoterAddress Address of the Uniswap V3 quoter
+     * @param _uniswapV3FactoryAddress Address of the Uniswap V3 factory
+     * @param _wethAddress Address of WETH token (accounting asset)
+     * @param _fundFactory Address of the deployed WhackRockFundFactory
      * @param _maxInitialFundTokensLength Maximum number of tokens a fund can have at creation
      * @param _usdcTokenAddress Address of the USDC token
      * @param _whackRockRewardsAddr Address that receives protocol fees
@@ -105,7 +119,11 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
      */
     function initialize(
         address _initialOwner,
-        address _aerodromeRouterAddress,
+        address _uniswapV3RouterAddress,
+        address _uniswapV3QuoterAddress,
+        address _uniswapV3FactoryAddress,
+        address _wethAddress,
+        address _fundFactory,
         uint256 _maxInitialFundTokensLength,
         address _usdcTokenAddress,
         address _whackRockRewardsAddr,
@@ -117,15 +135,23 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
         __Ownable_init(_initialOwner); 
         __UUPSUpgradeable_init();    
 
-        require(_aerodromeRouterAddress != address(0), "Registry: Router zero");
+        require(_uniswapV3RouterAddress != address(0), "Registry: Router zero");
+        require(_uniswapV3QuoterAddress != address(0), "Registry: Quoter zero");
+        require(_uniswapV3FactoryAddress != address(0), "Registry: Factory zero");
+        require(_wethAddress != address(0), "Registry: WETH zero");
+        require(_fundFactory != address(0), "Registry: Fund factory zero");
         require(_maxInitialFundTokensLength > 0, "Registry: Max fund tokens must be > 0");
         require(_usdcTokenAddress != address(0), "Registry: USDC address zero");
         require(_whackRockRewardsAddr != address(0), "Registry: Rewards address zero");
         require(_protocolAumRecipient != address(0), "Registry: Protocol AUM recipient zero");
 
-        aerodromeRouter = IAerodromeRouter(_aerodromeRouterAddress);
-        WETH_ADDRESS = address(IAerodromeRouter(_aerodromeRouterAddress).weth());
-        require(WETH_ADDRESS != address(0), "Registry: Could not derive WETH address");
+        uniswapV3Router = IUniswapV3Router(_uniswapV3RouterAddress);
+        uniswapV3Quoter = IUniswapV3Quoter(_uniswapV3QuoterAddress);
+        uniswapV3Factory = IUniswapV3Factory(_uniswapV3FactoryAddress);
+        WETH_ADDRESS = _wethAddress;
+        
+        // Set the fund factory (deployed separately)
+        fundFactory = IWhackRockFundFactory(_fundFactory);
         
         USDC_TOKEN = IERC20(_usdcTokenAddress); // Use standard IERC20
         whackRockRewardsAddress = _whackRockRewardsAddr;
@@ -151,6 +177,16 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
      * @param newImplementation Address of the new implementation contract
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    /**
+     * @notice Updates the fund factory address
+     * @dev Only callable by owner
+     * @param _newFundFactory Address of the new fund factory
+     */
+    function setFundFactory(address _newFundFactory) external onlyOwner {
+        require(_newFundFactory != address(0), "Registry: Fund factory zero");
+        fundFactory = IWhackRockFundFactory(_newFundFactory);
+    }
 
     /**
      * @notice Adds a token to the registry's global allowlist
@@ -270,6 +306,7 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
         address _initialAgent,
         address[] memory _fundAllowedTokens,
         uint256[] memory _initialTargetWeights,
+        address[] memory /* _poolAddresses */,
         string memory _vaultName,
         string memory _vaultSymbol,
         string memory _vaultURI,
@@ -279,6 +316,7 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
     ) external override returns (address fundAddress) {
         require(_fundAllowedTokens.length > 0, "Registry: Fund must have at least one token");
         require(_fundAllowedTokens.length <= maxInitialAllowedTokensLength, "Registry: Exceeds max fund tokens");
+        // Pool addresses parameter kept for compatibility but not used in Uniswap V3 version
         require(bytes(_vaultSymbol).length > 0, "Registry: Vault symbol cannot be empty");
         require(!isSymbolTaken[_vaultSymbol], "Registry: Vault symbol already taken");
         require(_agentAumFeeWalletForFund != address(0), "Registry: Agent AUM fee wallet zero");
@@ -293,10 +331,14 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
             USDC_TOKEN.safeTransferFrom(msg.sender, whackRockRewardsAddress, protocolFundCreationFeeUsdcAmount);
         }
 
-        WhackRockFund newFund = new WhackRockFund(
+        // Create a new fund using the factory
+        fundAddress = fundFactory.createFund(
             msg.sender, 
             _initialAgent,
-            address(aerodromeRouter),
+            address(uniswapV3Router),
+            address(uniswapV3Quoter),
+            address(uniswapV3Factory),
+            WETH_ADDRESS,
             _fundAllowedTokens,
             _initialTargetWeights,
             _vaultName,
@@ -305,10 +347,8 @@ contract WhackRockFundRegistry is Initializable, UUPSUpgradeable, OwnableUpgrade
             _agentAumFeeWalletForFund,     
             _agentSetTotalAumFeeBps,       
             protocolAumFeeRecipientForFunds,
-            address(USDC_TOKEN),
-            new bytes(0)
+            address(USDC_TOKEN)
         );
-        fundAddress = address(newFund);
 
 
         deployedFunds.push(fundAddress);
