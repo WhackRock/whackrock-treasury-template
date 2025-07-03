@@ -24,7 +24,6 @@ Add this to your foundry.toml:
 src = "src"
 out = "out"
 libs = ["lib"]
-# Replace with your actual Base Mainnet RPC URL
 fork_url = "https://mainnet.base.org"
 fork_block_number = 30483478 
 ```
