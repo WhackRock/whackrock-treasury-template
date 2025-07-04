@@ -183,7 +183,9 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     
     /**
      * @notice Stakes tokens for a specified lock duration
-     * @dev Users can add to existing stakes but cannot reduce lock duration
+     * @dev Users can add to existing stakes but cannot reduce lock duration.
+     *      When adding to existing stakes, the start time is reset to prevent lock-up bypass.
+     *      This ensures all tokens are locked for the full duration from the time of deposit.
      * @param _amount Amount of tokens to stake
      * @param _lockDuration Duration to lock tokens (minimum 180 days)
      */
@@ -197,6 +199,11 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
         if (userStake.amount > 0) {
             _updatePoints(msg.sender);
             require(_lockDuration >= userStake.lockDuration, "Cannot reduce lock duration");
+            
+            // Reset start time when adding to existing stake to prevent lock-up bypass
+            // This ensures all tokens are locked for the full duration from the time of deposit
+            userStake.startTime = block.timestamp;
+            userStake.lastClaimTime = block.timestamp;
             userStake.lockDuration = _lockDuration;
         } else {
             userStake.startTime = block.timestamp;
