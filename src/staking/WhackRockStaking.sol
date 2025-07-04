@@ -28,6 +28,10 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @notice This contract allows users to stake WROCK tokens and earn points based on lock duration
  * @dev Implements a time-weighted staking mechanism with multipliers for longer lock periods
  * Points can be claimed and redeemed through an external PointsRedeemer contract
+ * 
+ * @dev Token Compatibility: This contract supports fee-on-transfer and deflationary tokens.
+ * The stake function measures the actual amount of tokens received to handle tokens that
+ * deduct fees during transfers. This prevents accounting mismatches that could lock user funds.
  */
 contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
@@ -200,18 +204,26 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
             userStake.lockDuration = _lockDuration;
         }
         
-        // Effects
-        userStake.amount += _amount;
-        totalStaked += _amount;
+        // Measure balance before transfer
+        uint256 balanceBefore = stakingToken.balanceOf(address(this));
         
-        // Interactions
+        // Interactions - transfer tokens first
         stakingToken.safeTransferFrom(msg.sender, address(this), _amount);
+        
+        // Measure actual amount received (handles fee-on-transfer tokens)
+        uint256 actualAmount = stakingToken.balanceOf(address(this)) - balanceBefore;
+        require(actualAmount > 0, "No tokens received");
+        
+        // Effects - update state with actual amount received
+        userStake.amount += actualAmount;
+        totalStaked += actualAmount;
+        
         uint256 multiplier = _getMultiplier(_lockDuration);
         uint256 unlockTime = userStake.startTime + userStake.lockDuration;
         
         emit Staked(
             msg.sender, 
-            _amount, 
+            actualAmount, 
             userStake.amount,
             _lockDuration,
             unlockTime,
