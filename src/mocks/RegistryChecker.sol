@@ -135,6 +135,7 @@ contract RegistryChecker {
  * @title QuickRegistryChecker
  * @notice Minimal contract for quick registry checks
  * @dev Use this for simple one-off checks without deploying the full checker
+ * @dev Address on Base: 0x9ba025056AcE2e8fF799828e421289359194508F
  */
 contract QuickRegistryChecker {
     /**
