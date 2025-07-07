@@ -19,16 +19,16 @@ contract UniswapV3TWAPOracle {
 
     /// @notice Uniswap V3 Factory contract
     IUniswapV3Factory public immutable uniswapV3Factory;
-    
+
     /// @notice Default TWAP period in seconds (15 minutes)
     uint32 public immutable defaultTWAPPeriod;
-    
+
     /// @notice WETH address - the primary accounting asset
     address public immutable WETH;
-    
+
     /// @notice Minimum TWAP period to prevent manipulation (5 minutes)
     uint32 public constant MIN_TWAP_PERIOD = 300;
-    
+
     /// @notice Maximum TWAP period (24 hours)
     uint32 public constant MAX_TWAP_PERIOD = 86400;
 
@@ -44,7 +44,7 @@ contract UniswapV3TWAPOracle {
         if (_defaultTWAPPeriod < MIN_TWAP_PERIOD || _defaultTWAPPeriod > MAX_TWAP_PERIOD) {
             revert InvalidTWAPPeriod();
         }
-        
+
         uniswapV3Factory = IUniswapV3Factory(_uniswapV3Factory);
         defaultTWAPPeriod = _defaultTWAPPeriod;
         WETH = _weth;
@@ -58,12 +58,11 @@ contract UniswapV3TWAPOracle {
      * @param fee Pool fee tier (500, 3000, 10000)
      * @return amountOut Amount of output token equivalent to amountIn
      */
-    function getTWAPPrice(
-        address tokenIn,
-        address tokenOut,
-        uint256 amountIn,
-        uint24 fee
-    ) external view returns (uint256 amountOut) {
+    function getTWAPPrice(address tokenIn, address tokenOut, uint256 amountIn, uint24 fee)
+        external
+        view
+        returns (uint256 amountOut)
+    {
         return getTWAPPriceWithPeriod(tokenIn, tokenOut, amountIn, fee, defaultTWAPPeriod);
     }
 
@@ -76,13 +75,11 @@ contract UniswapV3TWAPOracle {
      * @param twapPeriod TWAP period in seconds
      * @return amountOut Amount of output token equivalent to amountIn
      */
-    function getTWAPPriceWithPeriod(
-        address tokenIn,
-        address tokenOut,
-        uint256 amountIn,
-        uint24 fee,
-        uint32 twapPeriod
-    ) public view returns (uint256 amountOut) {
+    function getTWAPPriceWithPeriod(address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint32 twapPeriod)
+        public
+        view
+        returns (uint256 amountOut)
+    {
         if (amountIn == 0) return 0;
         if (twapPeriod < MIN_TWAP_PERIOD || twapPeriod > MAX_TWAP_PERIOD) {
             revert InvalidTWAPPeriod();
@@ -95,19 +92,14 @@ contract UniswapV3TWAPOracle {
         IUniswapV3Pool pool = IUniswapV3Pool(poolAddress);
 
         // Check if pool has sufficient observations
-        (, , , uint16 observationCardinality, , , ) = pool.slot0();
+        (,,, uint16 observationCardinality,,,) = pool.slot0();
         if (observationCardinality == 0) revert InsufficientObservations();
 
         // Get TWAP tick
-        (int24 arithmeticMeanTick, ) = _consult(poolAddress, twapPeriod);
+        (int24 arithmeticMeanTick,) = _consult(poolAddress, twapPeriod);
 
         // Convert tick to price and calculate output amount
-        amountOut = _getQuoteAtTick(
-            arithmeticMeanTick,
-            uint128(amountIn),
-            tokenIn,
-            tokenOut
-        );
+        amountOut = _getQuoteAtTick(arithmeticMeanTick, uint128(amountIn), tokenIn, tokenOut);
 
         return amountOut;
     }
@@ -119,10 +111,11 @@ contract UniswapV3TWAPOracle {
      * @return fee The fee tier of the most liquid pool
      * @return poolAddress The address of the most liquid pool
      */
-    function getMostLiquidPool(
-        address tokenA,
-        address tokenB
-    ) external view returns (uint24 fee, address poolAddress) {
+    function getMostLiquidPool(address tokenA, address tokenB)
+        external
+        view
+        returns (uint24 fee, address poolAddress)
+    {
         uint24[3] memory fees = [uint24(500), uint24(3000), uint24(10000)];
         uint128 maxLiquidity = 0;
         uint24 bestFee = 0;
@@ -152,18 +145,17 @@ contract UniswapV3TWAPOracle {
      * @param requiredCardinality Minimum required observation cardinality
      * @return isValid True if pool is valid for TWAP
      */
-    function isPoolValidForTWAP(
-        address tokenA,
-        address tokenB,
-        uint24 fee,
-        uint16 requiredCardinality
-    ) external view returns (bool isValid) {
+    function isPoolValidForTWAP(address tokenA, address tokenB, uint24 fee, uint16 requiredCardinality)
+        external
+        view
+        returns (bool isValid)
+    {
         address poolAddress = uniswapV3Factory.getPool(tokenA, tokenB, fee);
         if (poolAddress == address(0)) return false;
 
         IUniswapV3Pool pool = IUniswapV3Pool(poolAddress);
-        (, , , uint16 observationCardinality, , , ) = pool.slot0();
-        
+        (,,, uint16 observationCardinality,,,) = pool.slot0();
+
         return observationCardinality >= requiredCardinality;
     }
 
@@ -175,29 +167,23 @@ contract UniswapV3TWAPOracle {
      * @param fee Pool fee tier
      * @return amountOut Current spot price amount
      */
-    function getSpotPrice(
-        address tokenIn,
-        address tokenOut,
-        uint256 amountIn,
-        uint24 fee
-    ) external view returns (uint256 amountOut) {
+    function getSpotPrice(address tokenIn, address tokenOut, uint256 amountIn, uint24 fee)
+        external
+        view
+        returns (uint256 amountOut)
+    {
         if (amountIn == 0) return 0;
 
         address poolAddress = uniswapV3Factory.getPool(tokenIn, tokenOut, fee);
         if (poolAddress == address(0)) revert InvalidPool();
 
         IUniswapV3Pool pool = IUniswapV3Pool(poolAddress);
-        (uint160 sqrtPriceX96, , , , , , ) = pool.slot0();
+        (uint160 sqrtPriceX96,,,,,,) = pool.slot0();
 
         // Convert sqrtPriceX96 to tick for quote calculation
         int24 currentTick = _getTickFromSqrtRatio(sqrtPriceX96);
 
-        amountOut = _getQuoteAtTick(
-            currentTick,
-            uint128(amountIn),
-            tokenIn,
-            tokenOut
-        );
+        amountOut = _getQuoteAtTick(currentTick, uint128(amountIn), tokenIn, tokenOut);
 
         return amountOut;
     }
@@ -209,14 +195,14 @@ contract UniswapV3TWAPOracle {
      * @param fee Pool fee tier (optional, uses default if 0)
      * @return wethAmount Amount of WETH equivalent
      */
-    function getTokenValueInWETH(
-        address token,
-        uint256 amount,
-        uint24 fee
-    ) external view returns (uint256 wethAmount) {
+    function getTokenValueInWETH(address token, uint256 amount, uint24 fee)
+        external
+        view
+        returns (uint256 wethAmount)
+    {
         if (amount == 0) return 0;
         if (token == WETH) return amount; // Direct return for WETH
-        
+
         uint24 poolFee = fee == 0 ? 3000 : fee; // Use 0.3% as default
         return getTWAPPriceWithPeriod(token, WETH, amount, poolFee, defaultTWAPPeriod);
     }
@@ -228,20 +214,20 @@ contract UniswapV3TWAPOracle {
      * @param fee Pool fee tier (optional, uses default if 0)
      * @return tokenAmount Amount of token equivalent
      */
-    function getWETHValueInToken(
-        address token,
-        uint256 wethAmount,
-        uint24 fee
-    ) external view returns (uint256 tokenAmount) {
+    function getWETHValueInToken(address token, uint256 wethAmount, uint24 fee)
+        external
+        view
+        returns (uint256 tokenAmount)
+    {
         if (wethAmount == 0) return 0;
         if (token == WETH) return wethAmount; // Direct return for WETH
-        
+
         uint24 poolFee = fee == 0 ? 3000 : fee; // Use 0.3% as default
         return getTWAPPriceWithPeriod(WETH, token, wethAmount, poolFee, defaultTWAPPeriod);
     }
 
     // Internal Oracle Library Functions (compatible with Solidity 0.8.20+)
-    
+
     /**
      * @notice Consult the observation from secondsAgo to now for a given pool
      * @param pool Address of the pool to query
@@ -284,12 +270,11 @@ contract UniswapV3TWAPOracle {
      * @param quoteToken Address of an ERC20 token contract used as the quoteAmount denomination
      * @return quoteAmount Amount of quoteToken received for baseAmount of baseToken
      */
-    function _getQuoteAtTick(
-        int24 tick,
-        uint128 baseAmount,
-        address baseToken,
-        address quoteToken
-    ) internal pure returns (uint256 quoteAmount) {
+    function _getQuoteAtTick(int24 tick, uint128 baseAmount, address baseToken, address quoteToken)
+        internal
+        pure
+        returns (uint256 quoteAmount)
+    {
         uint160 sqrtRatioX96 = _getSqrtRatioAtTick(tick);
 
         // Calculate quoteAmount with better precision if it doesn't overflow when multiplied by itself
@@ -502,11 +487,7 @@ contract UniswapV3TWAPOracle {
      * @param denominator The divisor
      * @return result The 256-bit result
      */
-    function _mulDiv(
-        uint256 a,
-        uint256 b,
-        uint256 denominator
-    ) internal pure returns (uint256 result) {
+    function _mulDiv(uint256 a, uint256 b, uint256 denominator) internal pure returns (uint256 result) {
         // 512-bit multiply [prod1 prod0] = a * b
         // Compute the product mod 2**256 and mod 2**256 - 1
         // then use the Chinese Remainder Theorem to reconstruct

@@ -15,7 +15,6 @@ pragma solidity ^0.8.19;
  *    © 2024 WhackRock Labs – All rights reserved.
  */
 
-
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
@@ -28,29 +27,29 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @notice This contract allows users to stake WROCK tokens and earn points based on lock duration
  * @dev Implements a time-weighted staking mechanism with multipliers for longer lock periods
  * Points can be claimed and redeemed through an external PointsRedeemer contract
- * 
+ *
  * @dev Token Compatibility: This contract supports fee-on-transfer and deflationary tokens.
  * The stake function measures the actual amount of tokens received to handle tokens that
  * deduct fees during transfers. This prevents accounting mismatches that could lock user funds.
  */
 contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
-    
+
     /// @notice The ERC20 token that users stake
     IERC20 public immutable stakingToken;
-    
+
     /// @notice Minimum duration that tokens must be locked (6 months)
     uint256 public constant MINIMUM_STAKE_DURATION = 180 days;
-    
+
     /// @notice Maximum duration that tokens can be locked (2 years)
     uint256 public constant MAXIMUM_STAKE_DURATION = 730 days;
-    
+
     /// @notice Timelock delay for sensitive owner functions (48 hours)
     uint256 public constant TIMELOCK_DELAY = 48 hours;
-    
+
     /// @notice Base rate: 1 token = 1 point over 365 days
     uint256 public constant DAYS_PER_YEAR = 365;
-    
+
     /**
      * @notice Struct containing staking information for each user
      * @param amount The amount of tokens staked
@@ -66,22 +65,22 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
         uint256 lockDuration;
         uint256 accumulatedPoints;
     }
-    
+
     /// @notice Mapping of user addresses to their stake information
     mapping(address => Stake) public stakes;
-    
+
     /// @notice Mapping of user addresses to their total claimed points
     mapping(address => uint256) public claimedPoints;
-    
+
     /// @notice Total amount of tokens currently staked in the contract
     uint256 public totalStaked;
-    
+
     /// @notice Address of the authorized PointsRedeemer contract
     address public pointsRedeemer;
-    
+
     /// @notice Mapping of function to pending timelock execution
     mapping(bytes32 => uint256) public timelockExecutions;
-    
+
     /**
      * @notice Emitted when a user stakes tokens
      * @param user Address of the staker
@@ -92,8 +91,8 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
      * @param multiplier Points multiplier based on lock duration
      */
     event Staked(
-        address indexed user, 
-        uint256 amount, 
+        address indexed user,
+        uint256 amount,
         uint256 totalStakedAmount,
         uint256 lockDuration,
         uint256 unlockTime,
@@ -105,11 +104,7 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
      * @param points Amount of points claimed
      * @param totalClaimedPoints User's total claimed points after this claim
      */
-    event PointsClaimed(
-        address indexed user, 
-        uint256 points,
-        uint256 totalClaimedPoints
-    );
+    event PointsClaimed(address indexed user, uint256 points, uint256 totalClaimedPoints);
     /**
      * @notice Emitted when a user withdraws their staked tokens
      * @param user Address of the withdrawer
@@ -119,11 +114,7 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
      * @param stakeDuration Total duration the tokens were staked
      */
     event Withdrawn(
-        address indexed user, 
-        uint256 amount, 
-        uint256 points,
-        uint256 totalClaimedPoints,
-        uint256 stakeDuration
+        address indexed user, uint256 amount, uint256 points, uint256 totalClaimedPoints, uint256 stakeDuration
     );
     /**
      * @notice Emitted when the points redeemer contract is updated
@@ -136,20 +127,13 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
      * @param redeemer Address of the redeemer contract
      * @param amount Amount of points redeemed
      */
-    event PointsRedeemed(
-        address indexed user,
-        address indexed redeemer,
-        uint256 amount
-    );
+    event PointsRedeemed(address indexed user, address indexed redeemer, uint256 amount);
     /**
      * @notice Emitted when an owner function is queued for timelock
      * @param functionId Identifier of the function
      * @param executeTime Timestamp when the function can be executed
      */
-    event TimelockQueued(
-        bytes32 indexed functionId,
-        uint256 executeTime
-    );
+    event TimelockQueued(bytes32 indexed functionId, uint256 executeTime);
     /**
      * @notice Emitted when a timelocked function is executed
      * @param functionId Identifier of the function
@@ -166,13 +150,8 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
      * @param points Amount of points accrued
      * @param timestamp Timestamp when points were accrued
      */
-    event PointsAccrued(
-        address indexed user,
-        uint256 points,
-        uint256 timestamp
-    );
-    
-    
+    event PointsAccrued(address indexed user, uint256 points, uint256 timestamp);
+
     /**
      * @notice Initializes the staking contract with the token to be staked
      * @param _stakingToken Address of the ERC20 token to be staked
@@ -180,7 +159,7 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     constructor(address _stakingToken) Ownable(msg.sender) {
         stakingToken = IERC20(_stakingToken);
     }
-    
+
     /**
      * @notice Stakes tokens for a specified lock duration
      * @dev Users can add to existing stakes but cannot reduce lock duration.
@@ -193,13 +172,13 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
         require(_amount > 0, "Amount must be > 0");
         require(_lockDuration >= MINIMUM_STAKE_DURATION, "Minimum lock is 6 months");
         require(_lockDuration <= MAXIMUM_STAKE_DURATION, "Maximum lock is 2 years");
-        
+
         Stake storage userStake = stakes[msg.sender];
-        
+
         if (userStake.amount > 0) {
             _updatePoints(msg.sender);
             require(_lockDuration >= userStake.lockDuration, "Cannot reduce lock duration");
-            
+
             // Reset start time when adding to existing stake to prevent lock-up bypass
             // This ensures all tokens are locked for the full duration from the time of deposit
             userStake.startTime = block.timestamp;
@@ -210,34 +189,27 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
             userStake.lastClaimTime = block.timestamp;
             userStake.lockDuration = _lockDuration;
         }
-        
+
         // Measure balance before transfer
         uint256 balanceBefore = stakingToken.balanceOf(address(this));
-        
+
         // Interactions - transfer tokens first
         stakingToken.safeTransferFrom(msg.sender, address(this), _amount);
-        
+
         // Measure actual amount received (handles fee-on-transfer tokens)
         uint256 actualAmount = stakingToken.balanceOf(address(this)) - balanceBefore;
         require(actualAmount > 0, "No tokens received");
-        
+
         // Effects - update state with actual amount received
         userStake.amount += actualAmount;
         totalStaked += actualAmount;
-        
+
         uint256 bonusMultiplier = _getBonusMultiplier(_lockDuration);
         uint256 unlockTime = userStake.startTime + userStake.lockDuration;
-        
-        emit Staked(
-            msg.sender, 
-            actualAmount, 
-            userStake.amount,
-            _lockDuration,
-            unlockTime,
-            bonusMultiplier
-        );
+
+        emit Staked(msg.sender, actualAmount, userStake.amount, _lockDuration, unlockTime, bonusMultiplier);
     }
-    
+
     /**
      * @notice Withdraws staked tokens after lock period has ended
      * @dev Also claims any accumulated points before withdrawal
@@ -245,36 +217,27 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     function withdraw() external nonReentrant {
         Stake storage userStake = stakes[msg.sender];
         require(userStake.amount > 0, "No stake found");
-        require(
-            block.timestamp >= userStake.startTime + userStake.lockDuration,
-            "Still locked"
-        );
-        
+        require(block.timestamp >= userStake.startTime + userStake.lockDuration, "Still locked");
+
         _updatePoints(msg.sender);
-        
+
         uint256 amount = userStake.amount;
         uint256 points = userStake.accumulatedPoints;
-        
+
         // Effects
         if (points > 0) {
             claimedPoints[msg.sender] += points;
         }
-        
+
         totalStaked -= amount;
         uint256 stakeDuration = block.timestamp - userStake.startTime;
         delete stakes[msg.sender];
-        
+
         // Interactions
         stakingToken.safeTransfer(msg.sender, amount);
-        emit Withdrawn(
-            msg.sender, 
-            amount, 
-            points,
-            claimedPoints[msg.sender],
-            stakeDuration
-        );
+        emit Withdrawn(msg.sender, amount, points, claimedPoints[msg.sender], stakeDuration);
     }
-    
+
     /**
      * @notice Claims accumulated points without withdrawing stake
      * @dev Points are moved from accumulated to claimed status
@@ -282,14 +245,14 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     function claimPoints() external nonReentrant {
         require(stakes[msg.sender].amount > 0, "No stake found");
         _updatePoints(msg.sender);
-        
+
         uint256 points = stakes[msg.sender].accumulatedPoints;
         stakes[msg.sender].accumulatedPoints = 0;
         claimedPoints[msg.sender] += points;
-        
+
         emit PointsClaimed(msg.sender, points, claimedPoints[msg.sender]);
     }
-    
+
     /**
      * @notice Internal function to calculate and update user's accumulated points
      * @dev New simplified calculation: 1 token = 1 point over 365 days + bonus
@@ -298,27 +261,27 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     function _updatePoints(address _user) internal {
         Stake storage userStake = stakes[_user];
         if (userStake.amount == 0) return;
-        
+
         uint256 timeElapsed = block.timestamp - userStake.lastClaimTime;
         if (timeElapsed == 0) return;
-        
+
         // Base points: proportional to 365 days (1 token = 1 point over 365 days)
         uint256 basePoints = (userStake.amount * timeElapsed) / (DAYS_PER_YEAR * 1 days);
-        
+
         // Calculate bonus points
         uint256 bonusMultiplier = _getBonusMultiplier(userStake.lockDuration);
         uint256 bonusPoints = (basePoints * bonusMultiplier) / 100;
-        
+
         uint256 newPoints = basePoints + bonusPoints;
-        
+
         userStake.accumulatedPoints += newPoints;
         userStake.lastClaimTime = block.timestamp;
-        
+
         if (newPoints > 0) {
             emit PointsAccrued(_user, newPoints, block.timestamp);
         }
     }
-    
+
     /**
      * @notice Calculates the bonus multiplier based on lock duration
      * @dev Longer lock durations receive bonus points
@@ -327,11 +290,11 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
      */
     function _getBonusMultiplier(uint256 _lockDuration) internal pure returns (uint256) {
         if (_lockDuration >= 365 days) return 100; // 100% bonus for 1 year
-        if (_lockDuration >= 270 days) return 50;  // 50% bonus for 9 months
-        if (_lockDuration >= 180 days) return 0;   // No bonus for 6 months
+        if (_lockDuration >= 270 days) return 50; // 50% bonus for 9 months
+        if (_lockDuration >= 180 days) return 0; // No bonus for 6 months
         return 0;
     }
-    
+
     /**
      * @notice Returns comprehensive staking information for a user
      * @param _user Address to query stake information for
@@ -341,35 +304,33 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
      * @return currentPoints Total points (accumulated + pending)
      * @return canWithdraw Whether the stake can be withdrawn
      */
-    function getStakeInfo(address _user) external view returns (
-        uint256 amount,
-        uint256 startTime,
-        uint256 lockDuration,
-        uint256 currentPoints,
-        bool canWithdraw
-    ) {
+    function getStakeInfo(address _user)
+        external
+        view
+        returns (uint256 amount, uint256 startTime, uint256 lockDuration, uint256 currentPoints, bool canWithdraw)
+    {
         Stake memory userStake = stakes[_user];
         amount = userStake.amount;
         startTime = userStake.startTime;
         lockDuration = userStake.lockDuration;
-        
+
         if (amount > 0) {
             uint256 timeElapsed = block.timestamp - userStake.lastClaimTime;
-            
+
             // Base points: proportional to 365 days (1 token = 1 point over 365 days)
             uint256 basePoints = (amount * timeElapsed) / (DAYS_PER_YEAR * 1 days);
-            
+
             // Calculate bonus points
             uint256 bonusMultiplier = _getBonusMultiplier(userStake.lockDuration);
             uint256 bonusPoints = (basePoints * bonusMultiplier) / 100;
-            
+
             uint256 pendingPoints = basePoints + bonusPoints;
             currentPoints = userStake.accumulatedPoints + pendingPoints;
         }
-        
+
         canWithdraw = amount > 0 && block.timestamp >= startTime + lockDuration;
     }
-    
+
     /**
      * @notice Queues the points redeemer update for timelock
      * @dev Only callable by contract owner
@@ -380,7 +341,7 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
         timelockExecutions[functionId] = block.timestamp + TIMELOCK_DELAY;
         emit TimelockQueued(functionId, block.timestamp + TIMELOCK_DELAY);
     }
-    
+
     /**
      * @notice Executes the queued points redeemer update after timelock
      * @param _redeemer Address of the points redeemer contract
@@ -389,14 +350,14 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
         bytes32 functionId = keccak256(abi.encodePacked("setPointsRedeemer", _redeemer));
         require(timelockExecutions[functionId] != 0, "Not queued");
         require(block.timestamp >= timelockExecutions[functionId], "Timelock not expired");
-        
+
         delete timelockExecutions[functionId];
         pointsRedeemer = _redeemer;
-        
+
         emit TimelockExecuted(functionId);
         emit PointsRedeemerSet(_redeemer);
     }
-    
+
     /**
      * @notice Cancels a queued timelock operation
      * @param _functionId The function identifier to cancel
@@ -406,7 +367,7 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
         delete timelockExecutions[_functionId];
         emit TimelockCancelled(_functionId);
     }
-    
+
     /**
      * @notice Returns the total claimed points for a user
      * @param _user Address to query claimed points for
@@ -415,7 +376,7 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     function getClaimedPoints(address _user) external view returns (uint256) {
         return claimedPoints[_user];
     }
-    
+
     /**
      * @notice Redeems points for a user (only callable by authorized redeemer)
      * @dev Reduces the user's claimed points balance
@@ -425,12 +386,12 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     function redeemPoints(address _user, uint256 _amount) external nonReentrant {
         require(msg.sender == pointsRedeemer, "Not authorized");
         require(claimedPoints[_user] >= _amount, "Insufficient points");
-        
+
         // Effects before external calls
         claimedPoints[_user] -= _amount;
         emit PointsRedeemed(_user, msg.sender, _amount);
     }
-    
+
     /**
      * @notice Pauses all staking operations
      * @dev Only callable by owner in emergency situations
@@ -438,7 +399,7 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     function pause() external onlyOwner {
         _pause();
     }
-    
+
     /**
      * @notice Unpauses all staking operations
      * @dev Only callable by owner
@@ -446,7 +407,7 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     function unpause() external onlyOwner {
         _unpause();
     }
-    
+
     /**
      * @notice Emergency function to recover accidentally sent tokens
      * @dev Only callable by owner after timelock, cannot withdraw staking token
@@ -459,7 +420,7 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
         timelockExecutions[functionId] = block.timestamp + TIMELOCK_DELAY;
         emit TimelockQueued(functionId, block.timestamp + TIMELOCK_DELAY);
     }
-    
+
     /**
      * @notice Executes the queued token recovery after timelock
      * @param _token Address of the token to recover
@@ -470,10 +431,10 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
         bytes32 functionId = keccak256(abi.encodePacked("recoverToken", _token, _amount));
         require(timelockExecutions[functionId] != 0, "Not queued");
         require(block.timestamp >= timelockExecutions[functionId], "Timelock not expired");
-        
+
         delete timelockExecutions[functionId];
         IERC20(_token).safeTransfer(owner(), _amount);
-        
+
         emit TimelockExecuted(functionId);
     }
 }

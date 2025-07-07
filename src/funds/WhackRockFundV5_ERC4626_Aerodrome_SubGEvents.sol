@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.20;
 
-
 // /*
-//  *  
-//  *   oooooo   oooooo     oooo ooooo   ooooo       .o.         .oooooo.   oooo    oooo ooooooooo.     .oooooo.     .oooooo.   oooo    oooo 
-//  *   `888.    `888.     .8'  `888'   `888'      .888.       d8P'  `Y8b  `888   .8P'  `888   `Y88.  d8P'  `Y8b   d8P'  `Y8b  `888   .8P'  
-//  *    `888.   .8888.   .8'    888     888      .8"888.     888           888  d8'     888   .d88' 888      888 888           888  d8'    
-//  *     `888  .8'`888. .8'     888ooooo888     .8' `888.    888           88888[       888ooo88P'  888      888 888           88888[      
-//  *      `888.8'  `888.8'      888     888    .88ooo8888.   888           888`88b.     888`88b.    888      888 888           888`88b.    
-//  *       `888'    `888'       888     888   .8'     `888.  `88b    ooo   888  `88b.   888  `88b.  `88b    d88' `88b    ooo   888  `88b.  
-//  *        `8'      `8'       o888o   o888o o88o     o8888o  `Y8bood8P'  o888o  o888o o888o  o888o  `Y8bood8P'   `Y8bood8P'  o888o  o888o 
-//  *  
-//  *    AGENT‑MANAGED WEIGHTED FUND   
+//  *
+//  *   oooooo   oooooo     oooo ooooo   ooooo       .o.         .oooooo.   oooo    oooo ooooooooo.     .oooooo.     .oooooo.   oooo    oooo
+//  *   `888.    `888.     .8'  `888'   `888'      .888.       d8P'  `Y8b  `888   .8P'  `888   `Y88.  d8P'  `Y8b   d8P'  `Y8b  `888   .8P'
+//  *    `888.   .8888.   .8'    888     888      .8"888.     888           888  d8'     888   .d88' 888      888 888           888  d8'
+//  *     `888  .8'`888. .8'     888ooooo888     .8' `888.    888           88888[       888ooo88P'  888      888 888           88888[
+//  *      `888.8'  `888.8'      888     888    .88ooo8888.   888           888`88b.     888`88b.    888      888 888           888`88b.
+//  *       `888'    `888'       888     888   .8'     `888.  `88b    ooo   888  `88b.   888  `88b.  `88b    d88' `88b    ooo   888  `88b.
+//  *        `8'      `8'       o888o   o888o o88o     o8888o  `Y8bood8P'  o888o  o888o o888o  o888o  `Y8bood8P'   `Y8bood8P'  o888o  o888o
+//  *
+//  *    AGENT‑MANAGED WEIGHTED FUND
 //  *    © 2024 WhackRock Labs – All rights reserved.
 //  */
 
@@ -20,8 +19,8 @@ pragma solidity ^0.8.20;
 // import "@openzeppelin/contracts/access/Ownable.sol";
 // import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 // import "@openzeppelin/contracts/utils/math/Math.sol";
-// import {IAerodromeRouter} from "./interfaces/IRouter.sol"; 
-// import {IWhackRockFund} from "./interfaces/IWhackRockFund.sol"; 
+// import {IAerodromeRouter} from "./interfaces/IRouter.sol";
+// import {IWhackRockFund} from "./interfaces/IWhackRockFund.sol";
 
 // /**
 //  * @title WhackRockFund
@@ -63,13 +62,13 @@ pragma solidity ^0.8.20;
 
 //     /// @notice Address of the agent managing the fund's investments
 //     address public agent;
-    
+
 //     /// @notice DEX router used for swapping tokens during rebalancing
 //     IAerodromeRouter public immutable dexRouter;
-    
+
 //     /// @notice Address of WETH, used as the accounting asset for NAV calculations
 //     address public immutable ACCOUNTING_ASSET; // WETH
-    
+
 //     /// @notice Address of USDC token used for USD-denominated calculations
 //     address public immutable USDC_ADDRESS; // USDC token address
 
@@ -78,55 +77,55 @@ pragma solidity ^0.8.20;
 
 //     /// @notice Array of token addresses allowed in the fund
 //     address[] public allowedTokens;
-    
+
 //     /// @notice Mapping of token address to its target weight in basis points
 //     mapping(address => uint256) public targetWeights;
-    
+
 //     /// @notice Mapping to check if a token is allowed in the fund
 //     mapping(address => bool) public isAllowedTokenInternal;
 
 //     // Agent and Protocol AUM Fee parameters
 //     /// @notice Address receiving the agent's portion of AUM fees
 //     address public immutable agentAumFeeWallet;
-    
+
 //     /// @notice Annual AUM fee rate in basis points
 //     uint256 public immutable agentAumFeeBps;
-    
+
 //     /// @notice Address receiving the protocol's portion of AUM fees
 //     address public immutable protocolAumFeeRecipient;
-    
+
 //     /// @notice Timestamp of the last AUM fee collection
 //     uint256 public lastAgentAumFeeCollectionTimestamp;
 
 //     /// @notice Total basis points representing 100% (10000)
 //     uint256 public constant TOTAL_WEIGHT_BASIS_POINTS = 10000;
-    
+
 //     /// @notice Percentage of AUM fee allocated to the agent (60%)
 //     uint256 public constant AGENT_AUM_FEE_SHARE_BPS = 6000;
-    
+
 //     /// @notice Percentage of AUM fee allocated to the protocol (40%)
 //     uint256 public constant PROTOCOL_AUM_FEE_SHARE_BPS = 4000;
 
 //     /// @notice Default slippage tolerance for swaps (0.5%)
 //     uint256 public constant DEFAULT_SLIPPAGE_BPS = 50;
-    
+
 //     /// @notice Time buffer added to swap deadlines
 //     uint256 public constant SWAP_DEADLINE_OFFSET = 15 minutes;
-    
+
 //     /// @notice Default pool stability setting for Aerodrome swaps
 //     bool public constant DEFAULT_POOL_STABILITY = false;
-    
+
 //     /// @notice Minimum liquidity required for first deposit in WETH units
 //     uint256 private constant MINIMUM_SHARES_LIQUIDITY = 1000;
-    
+
 //     /// @notice Minimum initial deposit amount required to create a new fund (0.1 WETH)
 //     /// @dev Protects against dust attacks on first deposit that could manipulate share price
 //     uint256 public constant MINIMUM_INITIAL_DEPOSIT = 0.01 ether;
-    
+
 //     /// @notice Minimum deposit amount required for all deposits (0.01 WETH)
 //     /// @dev Prevents dust deposits that could be used for inflation attacks
 //     uint256 public constant MINIMUM_DEPOSIT = 0.01 ether;
-    
+
 //     /// @notice Threshold for triggering rebalancing (1% deviation)
 //     uint256 public constant REBALANCE_DEVIATION_THRESHOLD_BPS = 100;
 
@@ -176,7 +175,7 @@ pragma solidity ^0.8.20;
 //         IAerodromeRouter tempRouter = IAerodromeRouter(_dexRouterAddress);
 //         ACCOUNTING_ASSET = address(tempRouter.weth());
 //         if (ACCOUNTING_ASSET == address(0)) revert E1();
-        
+
 //         // Use directly provided USDC address
 //         USDC_ADDRESS = _usdcAddress;
 
@@ -206,7 +205,7 @@ pragma solidity ^0.8.20;
 //         }
 //         if (currentTotalWeight != TOTAL_WEIGHT_BASIS_POINTS) revert E2();
 //         _approveTokenIfNeeded(IERC20(ACCOUNTING_ASSET), address(dexRouter), type(uint256).max);
-        
+
 //         // Approve USDC for router if needed
 //         _approveTokenIfNeeded(IERC20(USDC_ADDRESS), address(dexRouter), type(uint256).max);
 
@@ -231,7 +230,7 @@ pragma solidity ^0.8.20;
 //         totalManagedAssets += IERC20(ACCOUNTING_ASSET).balanceOf(address(this));
 //         return totalManagedAssets;
 //     }
-    
+
 //     /**
 //      * @notice Calculates the total net asset value of the fund in USDC units
 //      * @dev Converts the WETH NAV to USDC value using DEX quote
@@ -240,18 +239,17 @@ pragma solidity ^0.8.20;
 //     function totalNAVInUSDC() public view returns (uint256 totalManagedAssetsInUSDC) {
 //         uint256 navInWETH = totalNAVInAccountingAsset();
 //         if (navInWETH == 0) return 0;
-        
+
 //         // Convert WETH value to USDC value using DEX router
 //         uint256 usdcValue = _getWETHValueInUSDC(navInWETH);
-        
+
 //         // If we couldn't get USDC value (e.g. no liquidity), return 0
 //         if (usdcValue == 0) {
 //             return 0;
 //         }
-        
+
 //         return usdcValue;
 //     }
-    
 
 //     /**
 //      * @notice Deposits WETH into the fund and mints shares
@@ -266,16 +264,16 @@ pragma solidity ^0.8.20;
 //         if (amountWETHToDeposit < MINIMUM_DEPOSIT) revert E2();
 //         if (receiver == address(0)) revert E1();
 
-//         uint256 navBeforeDeposit = totalNAVInAccountingAsset(); 
+//         uint256 navBeforeDeposit = totalNAVInAccountingAsset();
 //         uint256 totalSupplyBeforeDeposit = totalSupply();
 
 //         if (totalSupplyBeforeDeposit == 0) { // Handles first deposit
 //             // Require a higher minimum deposit for first deposit to prevent share price manipulation
 //             if (amountWETHToDeposit < MINIMUM_INITIAL_DEPOSIT) revert E2();
-            
+
 //             // Initial share price 1:1 with WETH
 //             sharesMinted = amountWETHToDeposit;
-            
+
 //             // With minimum initial deposit requirement, we can consider removing this
 //             // but keeping it as an additional safeguard
 //             if (sharesMinted < MINIMUM_SHARES_LIQUIDITY && amountWETHToDeposit > 0) {
@@ -296,12 +294,12 @@ pragma solidity ^0.8.20;
 
 //         (bool needsRebalance, uint256 maxDeviationBPS) = _isRebalanceNeeded();
 //         emit RebalanceCheck(needsRebalance, maxDeviationBPS, totalNAVInAccountingAsset()); // Pass current NAV
-//         if (needsRebalance || (totalSupplyBeforeDeposit == 0 && totalSupply() > 0) ) { 
+//         if (needsRebalance || (totalSupplyBeforeDeposit == 0 && totalSupply() > 0) ) {
 //             _rebalance();
 //         }
 //         return sharesMinted;
 //     }
-    
+
 //     /**
 //      * @notice Withdraws assets from the fund by burning shares
 //      * @dev Burns shares and transfers a proportional amount of all fund assets to the receiver
@@ -363,15 +361,13 @@ pragma solidity ^0.8.20;
 //             }
 //         }
 
-        
-
 //         address[] memory finalTokensWithdrawn = new address[](eventIdx);
 //         uint256[] memory finalAmountsWithdrawn = new uint256[](eventIdx);
 //         for (uint256 k = 0; k < eventIdx; k++) {
 //             finalTokensWithdrawn[k] = tokensWithdrawn[k];
 //             finalAmountsWithdrawn[k] = amountsWithdrawn[k];
 //         }
-        
+
 //         uint256 wethValueInUSDC = _getWETHValueInUSDC(1 ether);
 //         emit BasketAssetsWithdrawn(
 //             owner, receiver, sharesToBurn, finalTokensWithdrawn, finalAmountsWithdrawn,
@@ -391,7 +387,7 @@ pragma solidity ^0.8.20;
 //      *      Mints new shares and distributes them between agent and protocol
 //      *      according to AGENT_AUM_FEE_SHARE_BPS and PROTOCOL_AUM_FEE_SHARE_BPS
 //      */
-//     function collectAgentManagementFee() external { 
+//     function collectAgentManagementFee() external {
 //         if (agentAumFeeBps == 0) revert E5();
 //         if (block.timestamp <= lastAgentAumFeeCollectionTimestamp) revert E5();
 
@@ -405,10 +401,10 @@ pragma solidity ^0.8.20;
 
 //         uint256 timeElapsed = block.timestamp - lastAgentAumFeeCollectionTimestamp;
 //         uint256 totalFeeValueInAA = (navAtFeeCalc * agentAumFeeBps * timeElapsed) / (TOTAL_WEIGHT_BASIS_POINTS * 365 days);
-        
+
 //         if (totalFeeValueInAA > 0) {
 //             uint256 totalSharesToMintForFee = (totalFeeValueInAA * sharesAtFeeCalc) / navAtFeeCalc;
-            
+
 //             if (totalSharesToMintForFee > 0) {
 //                 uint256 agentShares = (totalSharesToMintForFee * AGENT_AUM_FEE_SHARE_BPS) / TOTAL_WEIGHT_BASIS_POINTS;
 //                 uint256 protocolShares = totalSharesToMintForFee - agentShares;
@@ -420,11 +416,10 @@ pragma solidity ^0.8.20;
 //                     _mint(protocolAumFeeRecipient, protocolShares);
 //                 }
 
-                
 //                 emit AgentAumFeeCollected(
 //                     agentAumFeeWallet, agentShares,
 //                     protocolAumFeeRecipient, protocolShares,
-//                     totalFeeValueInAA, 
+//                     totalFeeValueInAA,
 //                     navAtFeeCalc,
 //                     sharesAtFeeCalc,
 //                     block.timestamp
@@ -503,7 +498,6 @@ pragma solidity ^0.8.20;
 //         _rebalance();
 //     }
 
-    
 //     /**
 //      * @notice Gets the current composition of the fund's assets.
 //      * @dev Returns arrays for current weights (BPS) and token addresses.
@@ -683,7 +677,7 @@ pragma solidity ^0.8.20;
 
 //         uint256[] memory expectedAmountsOut = dexRouter.getAmountsOut(_amountIn, routes);
 //         if (expectedAmountsOut.length == 0 || expectedAmountsOut[expectedAmountsOut.length - 1] == 0) revert E6();
-        
+
 //         uint256 expectedAmountOut = expectedAmountsOut[expectedAmountsOut.length - 1];
 //         uint256 amountOutMin =
 //             (expectedAmountOut * (TOTAL_WEIGHT_BASIS_POINTS - _slippageBps)) / TOTAL_WEIGHT_BASIS_POINTS;
@@ -694,7 +688,6 @@ pragma solidity ^0.8.20;
 //         if (actualAmounts.length == 0) revert E6();
 //         emit FundTokenSwapped(_tokenIn, _amountIn, _tokenOut, actualAmounts[actualAmounts.length - 1]);
 //     }
-
 
 //     /**
 //      * @notice Approves a token for spending if current allowance is insufficient
@@ -709,7 +702,6 @@ pragma solidity ^0.8.20;
 //         }
 //     }
 
-    
 //     /**
 //      * @notice Gets the value of a token amount in accounting asset (WETH) units
 //      * @dev Uses the DEX router's price oracle to calculate the equivalent WETH value
@@ -737,7 +729,6 @@ pragma solidity ^0.8.20;
 //         }
 //     }
 
-    
 //     /**
 //      * @notice Gets the USDC value of a given WETH amount
 //      * @dev Uses the Aerodrome router to get price quote from WETH to USDC
@@ -746,7 +737,7 @@ pragma solidity ^0.8.20;
 //      */
 //     function _getWETHValueInUSDC(uint256 _wethAmount) internal view returns (uint256) {
 //         if (_wethAmount == 0) return 0;
-        
+
 //         // Check if we can get a direct quote from WETH to USDC
 //         IAerodromeRouter.Route[] memory routes = new IAerodromeRouter.Route[](1);
 //         routes[0] = IAerodromeRouter.Route({
@@ -755,7 +746,7 @@ pragma solidity ^0.8.20;
 //             stable: DEFAULT_POOL_STABILITY,
 //             factory: dexRouter.defaultFactory()
 //         });
-        
+
 //         try dexRouter.getAmountsOut(_wethAmount, routes) returns (uint256[] memory amounts) {
 //             if (amounts.length > 0 && amounts[amounts.length - 1] > 0) {
 //                 return amounts[amounts.length - 1];
@@ -763,7 +754,7 @@ pragma solidity ^0.8.20;
 //         } catch {
 //             revert E6();
 //         }
-        
+
 //         return 0;
 //     }
 
@@ -784,7 +775,7 @@ pragma solidity ^0.8.20;
 //             address currentToken = allowedTokens[i];
 //             uint256 tokenBalance = IERC20(currentToken).balanceOf(address(this));
 //             uint256 tokenValueInAA = _getTokenValueInAccountingAsset(currentToken, tokenBalance);
-            
+
 //             // This check `if (currentNAV == 0) return (true, TOTAL_WEIGHT_BASIS_POINTS);` was inside the loop
 //             // and would cause issues if the first token had 0 value but NAV was non-zero due to other tokens.
 //             // The initial currentNAV == 0 check at the function start handles the main case.

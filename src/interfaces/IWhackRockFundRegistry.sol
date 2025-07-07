@@ -62,19 +62,19 @@ interface IWhackRockFundRegistry {
      * @param token Address of the token that was added
      */
     event RegistryAllowedTokenAdded(address indexed token);
-    
+
     /**
      * @notice Emitted when a token is removed from the registry's global allowlist
      * @param token Address of the token that was removed
      */
     event RegistryAllowedTokenRemoved(address indexed token);
-    
+
     /**
      * @notice Emitted when the maximum allowed tokens limit is updated
      * @param newLength New maximum number of tokens allowed in a fund at creation
      */
     event MaxInitialAllowedTokensLengthUpdated(uint256 newLength);
-    
+
     /**
      * @notice Emitted when registry parameters are updated
      * @param usdcTokenAddress New address of the USDC token
@@ -120,7 +120,7 @@ interface IWhackRockFundRegistry {
      * @param _newMaxLength The new maximum length
      */
     function setMaxInitialAllowedTokensLength(uint256 _newMaxLength) external;
-    
+
     /**
      * @notice Creates and registers a new WhackRockFund
      * @dev Collects protocol creation fee in USDC if configured
@@ -154,14 +154,14 @@ interface IWhackRockFundRegistry {
      * @return Number of deployed funds
      */
     function getDeployedFundsCount() external view returns (uint256);
-    
+
     /**
      * @notice Returns the address of a fund by its index in the deployedFunds array
      * @param _index The index of the fund
      * @return Fund contract address
      */
     function getFundAddressByIndex(uint256 _index) external view returns (address);
-    
+
     /**
      * @notice Returns a copy of the registry's global list of allowed tokens
      * @dev Useful for frontends to know which tokens can be selected for fund creation

@@ -12,45 +12,45 @@ contract DeployStaking is Script {
         // Get private key from environment
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
-        
+
         console.log("=== WROCK Staking Deployment ===");
         console.log("Deployer Address:", deployer);
         console.log("Chain ID:", block.chainid);
         console.log("");
-        
+
         vm.startBroadcast(deployerPrivateKey);
-        
+
         // Deploy TEST token
         console.log("Deploying TEST token...");
         TestToken testToken = new TestToken();
         console.log("TEST token deployed at:", address(testToken));
-        
+
         // Mint 100000 ETH worth of TEST tokens to deployer
         uint256 mintAmount = 100000 ether;
         console.log("Minting", mintAmount / 1e18, "TEST tokens to deployer...");
         testToken.mint(deployer, mintAmount);
         console.log("Minted successfully!");
-        
+
         // Deploy WhackRockStaking contract
         console.log("Deploying WhackRockStaking...");
         WhackRockStaking stakingContract = new WhackRockStaking(address(testToken));
         console.log("WhackRockStaking deployed at:", address(stakingContract));
-        
+
         // Deploy PointsRedeemer contract
         console.log("Deploying PointsRedeemer...");
         PointsRedeemer redeemer = new PointsRedeemer(address(stakingContract));
         console.log("PointsRedeemer deployed at:", address(redeemer));
-        
+
         // Set the redeemer in the staking contract
         console.log("Setting redeemer in staking contract...");
-        
+
         // Queue the operation (timelock required)
         stakingContract.queueSetPointsRedeemer(address(redeemer));
         console.log("Queued setPointsRedeemer operation");
         console.log("Operation will be executable after 48 hours");
-        
+
         vm.stopBroadcast();
-        
+
         console.log("");
         console.log("=== Deployment Summary ===");
         console.log("TEST Token:", address(testToken));

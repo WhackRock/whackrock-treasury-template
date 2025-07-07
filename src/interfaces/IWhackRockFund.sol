@@ -32,7 +32,7 @@ interface IWhackRockFund {
      * @param newAgent Address of the new agent
      */
     event AgentUpdated(address indexed oldAgent, address indexed newAgent);
-    
+
     /**
      * @notice Emitted when target weights for the fund's assets are updated
      * @param agent Address of the agent that updated the weights
@@ -40,25 +40,16 @@ interface IWhackRockFund {
      * @param weights Array of corresponding target weights (in basis points)
      * @param timestamp Block timestamp when weights were updated
      */
-    event TargetWeightsUpdated(
-        address indexed agent,
-        address[] tokens,
-        uint256[] weights,
-        uint256 timestamp
-    );
-    
+    event TargetWeightsUpdated(address indexed agent, address[] tokens, uint256[] weights, uint256 timestamp);
+
     /**
      * @notice Emitted when a rebalance check is performed
      * @param needsRebalance Whether the fund needs rebalancing
      * @param maxDeviationBPS Maximum deviation in basis points from target weights
      * @param currentNAV_AA Current net asset value in accounting asset (WETH) units
      */
-    event RebalanceCheck(
-        bool needsRebalance, 
-        uint256 maxDeviationBPS, 
-        uint256 currentNAV_AA
-    );
-    
+    event RebalanceCheck(bool needsRebalance, uint256 maxDeviationBPS, uint256 currentNAV_AA);
+
     /**
      * @notice Emitted when a rebalance cycle is executed
      * @param navBeforeRebalanceAA NAV in accounting asset before rebalancing
@@ -67,12 +58,9 @@ interface IWhackRockFund {
      * @param wethValueInUSDC Value of the WETH in USDC units
      */
     event RebalanceCycleExecuted(
-        uint256 navBeforeRebalanceAA,
-        uint256 navAfterRebalanceAA,
-        uint256 blockTimestamp,
-        uint256 wethValueInUSDC
+        uint256 navBeforeRebalanceAA, uint256 navAfterRebalanceAA, uint256 blockTimestamp, uint256 wethValueInUSDC
     );
-    
+
     /**
      * @notice Emitted when tokens are swapped during rebalancing
      * @param tokenFrom Address of the token being sold
@@ -80,28 +68,17 @@ interface IWhackRockFund {
      * @param tokenTo Address of the token being bought
      * @param amountTo Amount of tokenTo received
      */
-    event FundTokenSwapped(
-        address indexed tokenFrom, 
-        uint256 amountFrom, 
-        address indexed tokenTo, 
-        uint256 amountTo
-    );
-    
+    event FundTokenSwapped(address indexed tokenFrom, uint256 amountFrom, address indexed tokenTo, uint256 amountTo);
+
     /**
      * @notice Emitted when a token swap fails
      * @param tokenFrom Address of the token being sold
-     * @param tokenTo Address of the token being bought  
+     * @param tokenTo Address of the token being bought
      * @param amountIn Amount of tokenFrom attempted to swap
      * @param reason Failure reason bytes
      */
-    event SwapFailed(
-        address indexed tokenFrom,
-        address indexed tokenTo,
-        uint256 amountIn,
-        bytes reason
-    );
-    
-    
+    event SwapFailed(address indexed tokenFrom, address indexed tokenTo, uint256 amountIn, bytes reason);
+
     /**
      * @notice Emitted when WETH is deposited and shares are minted
      * @param depositor Address that deposited WETH
@@ -121,7 +98,7 @@ interface IWhackRockFund {
         uint256 totalSupplyBeforeDeposit,
         uint256 wethValueInUSDC
     );
-    
+
     /**
      * @notice Emitted when shares are burned and assets are withdrawn
      * @param owner Address that owned the shares
@@ -145,7 +122,7 @@ interface IWhackRockFund {
         uint256 totalWETHValueOfWithdrawal,
         uint256 wethValueInUSDC
     );
-    
+
     /**
      * @notice Emitted when AUM fees are collected
      * @param agentFeeWallet Address receiving the agent's portion of fees
@@ -231,37 +208,37 @@ interface IWhackRockFund {
      * @return Total weight basis points (10000 = 100%)
      */
     function TOTAL_WEIGHT_BASIS_POINTS() external view returns (uint256);
-    
+
     /**
      * @notice Returns the percentage of AUM fee allocated to the agent
      * @return Agent's share of the AUM fee in basis points
      */
     function AGENT_AUM_FEE_SHARE_BPS() external view returns (uint256);
-    
+
     /**
      * @notice Returns the percentage of AUM fee allocated to the protocol
      * @return Protocol's share of the AUM fee in basis points
      */
     function PROTOCOL_AUM_FEE_SHARE_BPS() external view returns (uint256);
-    
+
     /**
      * @notice Returns the default slippage tolerance for swaps
      * @return Default slippage in basis points
      */
     function DEFAULT_SLIPPAGE_BPS() external view returns (uint256);
-    
+
     /**
      * @notice Returns the deadline offset for swap transactions
      * @return Swap deadline offset in seconds
      */
     function SWAP_DEADLINE_OFFSET() external view returns (uint256);
-    
+
     /**
      * @notice Returns the default pool stability setting for DEX swaps
      * @return True if stable pools are used by default, false for volatile pools
      */
     function DEFAULT_POOL_STABILITY() external view returns (bool);
-    
+
     /**
      * @notice Returns the threshold for rebalancing
      * @return Rebalance deviation threshold in basis points
@@ -269,13 +246,13 @@ interface IWhackRockFund {
     function REBALANCE_DEVIATION_THRESHOLD_BPS() external view returns (uint256);
 
     // --- Core Functions ---
-    
+
     /**
      * @notice Calculates the total net asset value of the fund in accounting asset (WETH) units
      * @return totalManagedAssets Total NAV in WETH
      */
     function totalNAVInAccountingAsset() external view returns (uint256 totalManagedAssets);
-    
+
     /**
      * @notice Calculates the total net asset value of the fund in USDC units
      * @return totalManagedAssetsInUSDC Total NAV in USDC
@@ -291,7 +268,7 @@ interface IWhackRockFund {
      * @return sharesMinted Number of shares minted
      */
     function deposit(uint256 amountWETHToDeposit, address receiver) external returns (uint256 sharesMinted);
-    
+
     /**
      * @notice Withdraws assets from the fund by burning shares
      * @dev Burns shares and transfers a proportional amount of all fund assets to the receiver
@@ -340,7 +317,6 @@ interface IWhackRockFund {
      */
     function triggerRebalance() external;
 
-    
     /**
      * @notice Gets the target composition of the fund's assets.
      * @dev Returns arrays for target weights (BPS) and token addresses.
@@ -348,8 +324,10 @@ interface IWhackRockFund {
      * @return targetComposition_ An array of target weights in basis points.
      * @return tokenAddresses_ An array of the addresses of the allowed tokens.
      */
-    function getTargetCompositionBPS() external view returns (uint256[] memory targetComposition_, address[] memory tokenAddresses_);
-
+    function getTargetCompositionBPS()
+        external
+        view
+        returns (uint256[] memory targetComposition_, address[] memory tokenAddresses_);
 
     /**
      * @notice Gets the current composition of the fund's assets.
@@ -358,6 +336,8 @@ interface IWhackRockFund {
      * @return currentComposition_ An array of current weights in basis points.
      * @return tokenAddresses_ An array of the addresses of the allowed tokens.
      */
-    function getCurrentCompositionBPS() external view returns (uint256[] memory currentComposition_, address[] memory tokenAddresses_);
-    
+    function getCurrentCompositionBPS()
+        external
+        view
+        returns (uint256[] memory currentComposition_, address[] memory tokenAddresses_);
 }

@@ -54,8 +54,8 @@ interface IWhackRockFundFactory {
         string memory _vaultName,
         string memory _vaultSymbol,
         string memory _vaultURI,
-        address _agentAumFeeWalletForFund,     
-        uint256 _agentSetTotalAumFeeBps,       
+        address _agentAumFeeWalletForFund,
+        uint256 _agentSetTotalAumFeeBps,
         address _protocolAumFeeRecipientForFunds,
         address _usdcTokenAddress
     ) external returns (address);

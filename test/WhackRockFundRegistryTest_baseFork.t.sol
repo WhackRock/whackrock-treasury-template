@@ -7,7 +7,7 @@ import "forge-std/console.sol";
 // Adjust import paths based on your project structure
 import {WhackRockFundRegistry, IWhackRockFundRegistry} from "../src/factory/WhackRockFundRegistry.sol"; // Assuming this is your UUPS upgradeable registry
 import {WhackRockFundFactory} from "../src/factory/WhackRockFundFactory.sol";
-// import {WhackRockFund} from "../src/WhackRockFundV5_ERC4626_Aerodrome_SubGEvents.sol"; 
+// import {WhackRockFund} from "../src/WhackRockFundV5_ERC4626_Aerodrome_SubGEvents.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IAerodromeRouter} from "../src/interfaces/IRouter.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -17,15 +17,15 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 // --- Mainnet Addresses (BASE MAINNET) ---
-address constant AERODROME_ROUTER_ADDRESS_BASE = 0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43; 
+address constant AERODROME_ROUTER_ADDRESS_BASE = 0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43;
 address constant UNISWAP_V3_ROUTER_BASE = 0x2626664c2603336E57B271c5C0b26F421741e481;
 address constant UNISWAP_V3_QUOTER_BASE = 0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a;
 address constant UNISWAP_V3_FACTORY_BASE = 0x33128a8fC17869897dcE68Ed026d694621f6FDfD;
-address constant WETH_ADDRESS_BASE = 0x4200000000000000000000000000000000000006; 
+address constant WETH_ADDRESS_BASE = 0x4200000000000000000000000000000000000006;
 
 // Example ERC20 tokens on Base for testing allowed list
 address constant USDC_BASE = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913; // USDC address for fees
-address constant CBBTC_BASE = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf; 
+address constant CBBTC_BASE = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf;
 address constant VIRTU_BASE = 0x0b3e328455c4059EEb9e3f84b5543F74E24e7E1b;
 address constant ANOTHER_TOKEN_BASE = 0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA; // Example: DAI on Base
 
@@ -61,35 +61,34 @@ contract WhackRockFundRegistryTest is Test {
     IAerodromeRouter public aerodromeRouter = IAerodromeRouter(AERODROME_ROUTER_ADDRESS_BASE);
     IERC20 public usdcToken = IERC20(USDC_BASE);
 
-
     function setUp() public {
         // 1. Deploy the fund factory first (following deployment script pattern)
         fundFactory = new WhackRockFundFactory();
-        
+
         // 2. Deploy the registry implementation contract
         WhackRockFundRegistry registryImplementation = new WhackRockFundRegistry();
 
         // 3. Prepare the initialization calldata (including factory address)
         bytes memory initializeData = abi.encodeWithSelector(
             WhackRockFundRegistry.initialize.selector,
-            REGISTRY_OWNER,                                 // initialOwner
-            UNISWAP_V3_ROUTER_BASE,                        // _uniswapV3RouterAddress
-            UNISWAP_V3_QUOTER_BASE,                        // _uniswapV3QuoterAddress
-            UNISWAP_V3_FACTORY_BASE,                       // _uniswapV3FactoryAddress
-            WETH_ADDRESS_BASE,                             // _wethAddress
-            address(fundFactory),                          // _fundFactory
-            MAX_INITIAL_TOKENS_FOR_FUND_REGISTRY,          // _maxInitialFundTokensLength
-            USDC_BASE,                                     // _usdcTokenAddress
-            WHACKROCK_REWARDS_ADDR,                        // _whackRockRewardsAddr
-            PROTOCOL_CREATION_FEE_USDC,                    // _protocolCreationFeeUsdc
-            TOTAL_AUM_FEE_BPS_FOR_FUNDS,                   // _totalAumFeeBps
-            PROTOCOL_AUM_RECIPIENT_FOR_FUNDS,              // _protocolAumRecipient
-            MAX_AGENT_DEPOSIT_FEE_BPS_REGISTRY             // _maxAgentDepositFeeBpsAllowed
+            REGISTRY_OWNER, // initialOwner
+            UNISWAP_V3_ROUTER_BASE, // _uniswapV3RouterAddress
+            UNISWAP_V3_QUOTER_BASE, // _uniswapV3QuoterAddress
+            UNISWAP_V3_FACTORY_BASE, // _uniswapV3FactoryAddress
+            WETH_ADDRESS_BASE, // _wethAddress
+            address(fundFactory), // _fundFactory
+            MAX_INITIAL_TOKENS_FOR_FUND_REGISTRY, // _maxInitialFundTokensLength
+            USDC_BASE, // _usdcTokenAddress
+            WHACKROCK_REWARDS_ADDR, // _whackRockRewardsAddr
+            PROTOCOL_CREATION_FEE_USDC, // _protocolCreationFeeUsdc
+            TOTAL_AUM_FEE_BPS_FOR_FUNDS, // _totalAumFeeBps
+            PROTOCOL_AUM_RECIPIENT_FOR_FUNDS, // _protocolAumRecipient
+            MAX_AGENT_DEPOSIT_FEE_BPS_REGISTRY // _maxAgentDepositFeeBpsAllowed
         );
 
         // 4. Deploy the ERC1967Proxy
         ERC1967Proxy proxy = new ERC1967Proxy(address(registryImplementation), initializeData);
-        
+
         // 5. Point our registry variable to the proxy address
         registryProxy = WhackRockFundRegistry(address(proxy));
 
@@ -109,32 +108,39 @@ contract WhackRockFundRegistryTest is Test {
         assertEq(registryProxy.owner(), REGISTRY_OWNER, "Registry owner mismatch");
         assertEq(address(registryProxy.uniswapV3Router()), UNISWAP_V3_ROUTER_BASE, "Uniswap V3 router mismatch");
         assertEq(registryProxy.WETH_ADDRESS(), WETH_ADDRESS_BASE, "WETH address mismatch");
-        assertEq(registryProxy.maxInitialAllowedTokensLength(), MAX_INITIAL_TOKENS_FOR_FUND_REGISTRY, "Max initial tokens length mismatch");
+        assertEq(
+            registryProxy.maxInitialAllowedTokensLength(),
+            MAX_INITIAL_TOKENS_FOR_FUND_REGISTRY,
+            "Max initial tokens length mismatch"
+        );
         assertEq(registryProxy.getDeployedFundsCount(), 0, "Initial fund count should be 0");
         assertEq(address(registryProxy.USDC_TOKEN()), USDC_BASE, "USDC token address mismatch");
         assertEq(registryProxy.whackRockRewardsAddress(), WHACKROCK_REWARDS_ADDR, "Rewards address mismatch");
         assertEq(registryProxy.protocolFundCreationFeeUsdcAmount(), PROTOCOL_CREATION_FEE_USDC, "Creation fee mismatch");
         assertEq(registryProxy.totalAumFeeBpsForFunds(), TOTAL_AUM_FEE_BPS_FOR_FUNDS, "Total AUM BPS mismatch");
-        assertEq(registryProxy.protocolAumFeeRecipientForFunds(), PROTOCOL_AUM_RECIPIENT_FOR_FUNDS, "Protocol AUM recipient mismatch");
+        assertEq(
+            registryProxy.protocolAumFeeRecipientForFunds(),
+            PROTOCOL_AUM_RECIPIENT_FOR_FUNDS,
+            "Protocol AUM recipient mismatch"
+        );
     }
 
     function testOwnerCanAddRegistryAllowedToken() public {
         vm.startPrank(REGISTRY_OWNER);
         // Using IWhackRockFundRegistry for event signature if it's defined there
-        vm.expectEmit(true, false, false, false, address(registryProxy)); 
+        vm.expectEmit(true, false, false, false, address(registryProxy));
         emit IWhackRockFundRegistry.RegistryAllowedTokenAdded(ANOTHER_TOKEN_BASE);
         registryProxy.addRegistryAllowedToken(ANOTHER_TOKEN_BASE);
         vm.stopPrank();
         assertTrue(registryProxy.isTokenAllowedInRegistry(ANOTHER_TOKEN_BASE), "Token should be allowed");
     }
-    
+
     function test_RevertAddRegistryAllowedToken_NotOwner() public {
         vm.startPrank(NON_OWNER);
         vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, NON_OWNER));
         registryProxy.addRegistryAllowedToken(ANOTHER_TOKEN_BASE);
         vm.stopPrank();
     }
-
 
     // --- createWhackRockFund Tests ---
     function testCreateWhackRockFund_Success() public {
@@ -157,9 +163,9 @@ contract WhackRockFundRegistryTest is Test {
         // Approve USDC for the creation fee
         usdcToken.approve(address(registryProxy), PROTOCOL_CREATION_FEE_USDC);
 
-        // vm.expectEmit(false, true, true, false, address(registryProxy)); 
+        // vm.expectEmit(false, true, true, false, address(registryProxy));
         // emit IWhackRockFundRegistry.WhackRockFundCreated(
-        //     1, address(0), FUND_CREATOR_1, TEST_AGENT, vaultName, vaultSymbol, 
+        //     1, address(0), FUND_CREATOR_1, TEST_AGENT, vaultName, vaultSymbol,
         //     fundTokens, fundWeights, TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND, 0
         // );
 
@@ -182,7 +188,7 @@ contract WhackRockFundRegistryTest is Test {
         assertEq(registryProxy.getFundAddressByIndex(0), fundAddress, "Fund address mismatch in array");
         assertEq(registryProxy.fundToCreator(fundAddress), FUND_CREATOR_1, "Fund creator mismatch");
         assertTrue(registryProxy.isSymbolTaken(vaultSymbol), "Symbol should be marked as taken");
-        
+
         // WhackRockFund createdFund = WhackRockFund(payable(fundAddress));
         // assertEq(createdFund.owner(), FUND_CREATOR_1, "New fund owner should be creator");
         // assertEq(createdFund.agent(), TEST_AGENT, "New fund agent mismatch");
@@ -205,16 +211,38 @@ contract WhackRockFundRegistryTest is Test {
         address[] memory poolAddresses = new address[](1);
         poolAddresses[0] = USDC_WETH_POOL;
         usdcToken.approve(address(registryProxy), PROTOCOL_CREATION_FEE_USDC);
-        registryProxy.createWhackRockFund(TEST_AGENT, fundTokens, fundWeights, poolAddresses, "FundOne", "FONE", "FONE", "test description", TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND);
+        registryProxy.createWhackRockFund(
+            TEST_AGENT,
+            fundTokens,
+            fundWeights,
+            poolAddresses,
+            "FundOne",
+            "FONE",
+            "FONE",
+            "test description",
+            TEST_AGENT_AUM_FEE_WALLET_FUND,
+            TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND
+        );
         vm.stopPrank();
 
         vm.startPrank(FUND_CREATOR_2);
         usdcToken.approve(address(registryProxy), PROTOCOL_CREATION_FEE_USDC);
         vm.expectRevert("Registry: Vault symbol already taken");
-        registryProxy.createWhackRockFund(TEST_AGENT, fundTokens, fundWeights, poolAddresses, "FundTwo", "FONE","FONE", "test description",TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND);
+        registryProxy.createWhackRockFund(
+            TEST_AGENT,
+            fundTokens,
+            fundWeights,
+            poolAddresses,
+            "FundTwo",
+            "FONE",
+            "FONE",
+            "test description",
+            TEST_AGENT_AUM_FEE_WALLET_FUND,
+            TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND
+        );
         vm.stopPrank();
     }
-    
+
     // Other tests like _ExceedsMaxTokens, _TokenNotAllowedByRegistry, _EmptySymbol, _NoTokens
     // would need similar updates for createWhackRockFund parameters and USDC approval if they reach that point.
     // For brevity, only showing the success case and one revert fully updated.
@@ -225,7 +253,7 @@ contract WhackRockFundRegistryTest is Test {
         vm.stopPrank();
 
         address[] memory registryAllowed = registryProxy.getRegistryAllowedTokens();
-        assertEq(registryAllowed.length, 4); 
+        assertEq(registryAllowed.length, 4);
 
         vm.startPrank(FUND_CREATOR_1);
         address[] memory fundTokens = new address[](1);
@@ -234,17 +262,25 @@ contract WhackRockFundRegistryTest is Test {
         fundWeights[0] = 10000;
         address[] memory poolAddresses = new address[](1);
         poolAddresses[0] = USDC_WETH_POOL;
-        
+
         usdcToken.approve(address(registryProxy), PROTOCOL_CREATION_FEE_USDC);
         address fundAddr = registryProxy.createWhackRockFund(
-            TEST_AGENT, fundTokens, fundWeights, poolAddresses, "GetterFund", "GF", "GF_uri", "test description",
-            TEST_AGENT_AUM_FEE_WALLET_FUND, TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND
+            TEST_AGENT,
+            fundTokens,
+            fundWeights,
+            poolAddresses,
+            "GetterFund",
+            "GF",
+            "GF_uri",
+            "test description",
+            TEST_AGENT_AUM_FEE_WALLET_FUND,
+            TEST_AGENT_SET_TOTAL_AUM_FEE_BPS_FUND
         );
         vm.stopPrank();
 
         assertEq(registryProxy.getDeployedFundsCount(), 1);
         assertEq(registryProxy.getFundAddressByIndex(0), fundAddr);
         vm.expectRevert("Registry: Index out of bounds");
-        registryProxy.getFundAddressByIndex(1); 
+        registryProxy.getFundAddressByIndex(1);
     }
 }

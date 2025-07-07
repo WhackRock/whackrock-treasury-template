@@ -41,13 +41,13 @@ contract WhackRockFundFactory is IWhackRockFundFactory {
         string memory _vaultName,
         string memory _vaultSymbol,
         string memory _vaultURI,
-        address _agentAumFeeWalletForFund,     
-        uint256 _agentSetTotalAumFeeBps,       
+        address _agentAumFeeWalletForFund,
+        uint256 _agentSetTotalAumFeeBps,
         address _protocolAumFeeRecipientForFunds,
         address _usdcTokenAddress
     ) external override returns (address) {
         WhackRockFund newFund = new WhackRockFund(
-            _initialOwner, 
+            _initialOwner,
             _initialAgent,
             _uniswapV3RouterAddress,
             _uniswapV3QuoterAddress,
@@ -58,13 +58,13 @@ contract WhackRockFundFactory is IWhackRockFundFactory {
             _vaultName,
             _vaultSymbol,
             _vaultURI,
-            _agentAumFeeWalletForFund,     
-            _agentSetTotalAumFeeBps,       
+            _agentAumFeeWalletForFund,
+            _agentSetTotalAumFeeBps,
             _protocolAumFeeRecipientForFunds,
             _usdcTokenAddress,
             "" // data parameter
         );
-        
+
         return address(newFund);
     }
 }

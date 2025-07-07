@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.20;
 
-
 /*
  *  
  *   oooooo   oooooo     oooo ooooo   ooooo       .o.         .oooooo.   oooo    oooo ooooooooo.     .oooooo.     .oooooo.   oooo    oooo 
@@ -26,7 +25,7 @@ import {IUniswapV3SwapCallback} from "@uniswap/v3-core/contracts/interfaces/call
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {IAerodromeRouter} from "../interfaces/IRouter.sol";
 import {IWhackRockFund} from "../interfaces/IWhackRockFund.sol";
-import {UniswapV3TWAPOracle} from "../oracle/UniswapV3TWAPOracle.sol"; 
+import {UniswapV3TWAPOracle} from "../oracle/UniswapV3TWAPOracle.sol";
 
 /**
  * @title WhackRockFund
@@ -68,16 +67,16 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
 
     /// @notice Address of the agent managing the fund's investments
     address public agent;
-    
+
     /// @notice Uniswap V3 router used for swapping tokens during rebalancing
     IUniswapV3Router public immutable uniswapV3Router;
-    
+
     /// @notice Uniswap V3 quoter for getting swap quotes
     IUniswapV3Quoter public immutable uniswapV3Quoter;
-    
+
     /// @notice Address of WETH, used as the accounting asset for NAV calculations (hardcoded)
     address public immutable WETH_ADDRESS;
-    
+
     /// @notice Address of USDC token used for USD-denominated calculations
     address public immutable USDC_ADDRESS; // USDC token address
 
@@ -86,23 +85,23 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
 
     /// @notice Array of token addresses allowed in the fund
     address[] public allowedTokens;
-    
+
     /// @notice Mapping of token address to its target weight in basis points
     mapping(address => uint256) public targetWeights;
-    
+
     /// @notice Mapping to check if a token is allowed in the fund
     mapping(address => bool) public isAllowedTokenInternal;
 
     // Agent and Protocol AUM Fee parameters
     /// @notice Address receiving the agent's portion of AUM fees
     address public immutable agentAumFeeWallet;
-    
+
     /// @notice Annual AUM fee rate in basis points
     uint256 public immutable agentAumFeeBps;
-    
+
     /// @notice Address receiving the protocol's portion of AUM fees
     address public immutable protocolAumFeeRecipient;
-    
+
     /// @notice Timestamp of the last AUM fee collection
     uint256 public lastAgentAumFeeCollectionTimestamp;
 
@@ -111,36 +110,36 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
 
     /// @notice Maximum fee rate allowed (10%)
     uint256 public constant MAX_FEE_BASIS_POINTS = 1000;
-    
+
     /// @notice Percentage of AUM fee allocated to the agent (60%)
     uint256 public constant AGENT_AUM_FEE_SHARE_BPS = 6000;
-    
+
     /// @notice Percentage of AUM fee allocated to the protocol (40%)
     uint256 public constant PROTOCOL_AUM_FEE_SHARE_BPS = 4000;
 
     /// @notice Default slippage tolerance for swaps (0.5%)
     uint256 public constant DEFAULT_SLIPPAGE_BPS = 50;
-    
+
     /// @notice Time buffer added to swap deadlines
     uint256 public constant SWAP_DEADLINE_OFFSET = 15 minutes;
-    
+
     /// @notice Default fee tier for Uniswap V3 pools (0.3%)
     uint24 public constant DEFAULT_POOL_FEE = 3000;
-    
+
     /// @notice Default pool stability setting (false for Uniswap V3)
     bool public constant DEFAULT_POOL_STABILITY = false;
-    
+
     /// @notice Minimum liquidity required for first deposit in WETH units
     uint256 private constant MINIMUM_SHARES_LIQUIDITY = 1000;
-    
+
     /// @notice Minimum initial deposit amount required to create a new fund (0.1 WETH)
     /// @dev Protects against dust attacks on first deposit that could manipulate share price
     uint256 public constant MINIMUM_INITIAL_DEPOSIT = 0.01 ether;
-    
+
     /// @notice Minimum deposit amount required for all deposits (0.01 WETH)
     /// @dev Prevents dust deposits that could be used for inflation attacks
     uint256 public constant MINIMUM_DEPOSIT = 0.01 ether;
-    
+
     /// @notice Threshold for triggering rebalancing (1% deviation)
     uint256 public constant REBALANCE_DEVIATION_THRESHOLD_BPS = 100;
 
@@ -186,7 +185,11 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
         address _protocolAumFeeRecipientAddress,
         address _usdcAddress,
         bytes memory /* data */ // Unused again
-    ) ERC20(_vaultName, _vaultSymbol) Ownable(_initialOwner) UniswapV3TWAPOracle(_uniswapV3FactoryAddress, 900, _wethAddress) {
+    )
+        ERC20(_vaultName, _vaultSymbol)
+        Ownable(_initialOwner)
+        UniswapV3TWAPOracle(_uniswapV3FactoryAddress, 900, _wethAddress)
+    {
         if (_initialAgent == address(0)) revert E1();
         if (_uniswapV3RouterAddress == address(0)) revert E1();
         if (_uniswapV3QuoterAddress == address(0)) revert E1();
@@ -198,7 +201,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
 
         // Hardcode WETH as the accounting asset
         WETH_ADDRESS = _wethAddress;
-        
+
         // Use directly provided USDC address
         USDC_ADDRESS = _usdcAddress;
 
@@ -230,7 +233,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
         }
         if (currentTotalWeight != TOTAL_WEIGHT_BASIS_POINTS) revert E2();
         _approveTokenIfNeeded(IERC20(WETH_ADDRESS), address(uniswapV3Router), type(uint256).max);
-        
+
         // Approve USDC for router if needed
         _approveTokenIfNeeded(IERC20(USDC_ADDRESS), address(uniswapV3Router), type(uint256).max);
 
@@ -255,7 +258,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
         totalManagedAssets += IERC20(WETH_ADDRESS).balanceOf(address(this));
         return totalManagedAssets;
     }
-    
+
     /**
      * @notice Calculates the total net asset value of the fund in USDC units
      * @dev Converts the WETH NAV to USDC value using DEX quote
@@ -264,18 +267,17 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
     function totalNAVInUSDC() public view returns (uint256 totalManagedAssetsInUSDC) {
         uint256 navInWETH = totalNAVInAccountingAsset();
         if (navInWETH == 0) return 0;
-        
+
         // Convert WETH value to USDC value using DEX router
         uint256 usdcValue = _getWETHValueInUSDC(navInWETH);
-        
+
         // If we couldn't get USDC value (e.g. no liquidity), return 0
         if (usdcValue == 0) {
             return 0;
         }
-        
+
         return usdcValue;
     }
-    
 
     /**
      * @notice Deposits WETH into the fund and mints shares
@@ -290,16 +292,17 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
         if (amountWETHToDeposit < MINIMUM_DEPOSIT) revert E2();
         if (receiver == address(0)) revert E1();
 
-        uint256 navBeforeDeposit = totalNAVInAccountingAsset(); 
+        uint256 navBeforeDeposit = totalNAVInAccountingAsset();
         uint256 totalSupplyBeforeDeposit = totalSupply();
 
-        if (totalSupplyBeforeDeposit == 0) { // Handles first deposit
+        if (totalSupplyBeforeDeposit == 0) {
+            // Handles first deposit
             // Require a higher minimum deposit for first deposit to prevent share price manipulation
             if (amountWETHToDeposit < MINIMUM_INITIAL_DEPOSIT) revert E2();
-            
+
             // Initial share price 1:1 with WETH
             sharesMinted = amountWETHToDeposit;
-            
+
             // With minimum initial deposit requirement, we can consider removing this
             // but keeping it as an additional safeguard
             if (sharesMinted < MINIMUM_SHARES_LIQUIDITY && amountWETHToDeposit > 0) {
@@ -316,16 +319,24 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
 
         uint256 wethValueInUSDC = _getWETHValueInUSDC(1 ether);
 
-        emit WETHDepositedAndSharesMinted(msg.sender, receiver, amountWETHToDeposit, sharesMinted, navBeforeDeposit, totalSupplyBeforeDeposit, wethValueInUSDC);
+        emit WETHDepositedAndSharesMinted(
+            msg.sender,
+            receiver,
+            amountWETHToDeposit,
+            sharesMinted,
+            navBeforeDeposit,
+            totalSupplyBeforeDeposit,
+            wethValueInUSDC
+        );
 
         (bool needsRebalance, uint256 maxDeviationBPS) = _isRebalanceNeeded();
         emit RebalanceCheck(needsRebalance, maxDeviationBPS, totalNAVInAccountingAsset()); // Pass current NAV
-        if (needsRebalance || (totalSupplyBeforeDeposit == 0 && totalSupply() > 0) ) { 
+        if (needsRebalance || (totalSupplyBeforeDeposit == 0 && totalSupply() > 0)) {
             _rebalance();
         }
         return sharesMinted;
     }
-    
+
     /**
      * @notice Withdraws assets from the fund by burning shares
      * @dev Burns shares and transfers a proportional amount of all fund assets to the receiver
@@ -387,19 +398,24 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
             }
         }
 
-        
-
         address[] memory finalTokensWithdrawn = new address[](eventIdx);
         uint256[] memory finalAmountsWithdrawn = new uint256[](eventIdx);
         for (uint256 k = 0; k < eventIdx; k++) {
             finalTokensWithdrawn[k] = tokensWithdrawn[k];
             finalAmountsWithdrawn[k] = amountsWithdrawn[k];
         }
-        
+
         uint256 wethValueInUSDC = _getWETHValueInUSDC(1 ether);
         emit BasketAssetsWithdrawn(
-            owner, receiver, sharesToBurn, finalTokensWithdrawn, finalAmountsWithdrawn,
-            navBeforeWithdrawal, totalSupplyBeforeWithdrawal, totalWETHValueOfWithdrawal, wethValueInUSDC
+            owner,
+            receiver,
+            sharesToBurn,
+            finalTokensWithdrawn,
+            finalAmountsWithdrawn,
+            navBeforeWithdrawal,
+            totalSupplyBeforeWithdrawal,
+            totalWETHValueOfWithdrawal,
+            wethValueInUSDC
         );
 
         (bool needsRebalance, uint256 maxDeviationBPS) = _isRebalanceNeeded();
@@ -416,7 +432,6 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
      *      according to AGENT_AUM_FEE_SHARE_BPS and PROTOCOL_AUM_FEE_SHARE_BPS
      */
     function collectAgentManagementFee() external onlyOwner {
-
         if (agentAumFeeBps == 0) revert E5();
         if (block.timestamp <= lastAgentAumFeeCollectionTimestamp) revert E5();
 
@@ -429,11 +444,12 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
         }
 
         uint256 timeElapsed = block.timestamp - lastAgentAumFeeCollectionTimestamp;
-        uint256 totalFeeValueInAA = (navAtFeeCalc * agentAumFeeBps * timeElapsed) / (TOTAL_WEIGHT_BASIS_POINTS * 365 days);
-        
+        uint256 totalFeeValueInAA =
+            (navAtFeeCalc * agentAumFeeBps * timeElapsed) / (TOTAL_WEIGHT_BASIS_POINTS * 365 days);
+
         if (totalFeeValueInAA > 0) {
             uint256 totalSharesToMintForFee = (totalFeeValueInAA * sharesAtFeeCalc) / navAtFeeCalc;
-            
+
             if (totalSharesToMintForFee > 0) {
                 uint256 agentShares = (totalSharesToMintForFee * AGENT_AUM_FEE_SHARE_BPS) / TOTAL_WEIGHT_BASIS_POINTS;
                 uint256 protocolShares = totalSharesToMintForFee - agentShares;
@@ -445,11 +461,12 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
                     _mint(protocolAumFeeRecipient, protocolShares);
                 }
 
-                
                 emit AgentAumFeeCollected(
-                    agentAumFeeWallet, agentShares,
-                    protocolAumFeeRecipient, protocolShares,
-                    totalFeeValueInAA, 
+                    agentAumFeeWallet,
+                    agentShares,
+                    protocolAumFeeRecipient,
+                    protocolShares,
+                    totalFeeValueInAA,
                     navAtFeeCalc,
                     sharesAtFeeCalc,
                     block.timestamp
@@ -528,7 +545,6 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
         _rebalance();
     }
 
-    
     /**
      * @notice Gets the current composition of the fund's assets.
      * @dev Returns arrays for current weights (BPS) and token addresses.
@@ -538,12 +554,9 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
      */
     function getCurrentCompositionBPS()
         external
-        override
         view
-        returns (
-            uint256[] memory currentComposition_,
-            address[] memory tokenAddresses_
-        )
+        override
+        returns (uint256[] memory currentComposition_, address[] memory tokenAddresses_)
     {
         uint256 numAllowedTokens = allowedTokens.length;
         currentComposition_ = new uint256[](numAllowedTokens);
@@ -588,12 +601,9 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
      */
     function getTargetCompositionBPS()
         external
-        override
         view
-        returns (
-            uint256[] memory targetComposition_,
-            address[] memory tokenAddresses_
-        )
+        override
+        returns (uint256[] memory targetComposition_, address[] memory tokenAddresses_)
     {
         uint256 numAllowedTokens = allowedTokens.length;
         targetComposition_ = new uint256[](numAllowedTokens);
@@ -664,7 +674,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
      */
     function _safeGetWETHValueInUSDC(uint256 wethAmount) internal view returns (uint256 value) {
         if (wethAmount == 0) return 0;
-        
+
         try this.getWETHValueInToken(USDC_ADDRESS, wethAmount, DEFAULT_POOL_FEE) returns (uint256 val) {
             return val;
         } catch {
@@ -688,15 +698,17 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
      * @param slippageBps Slippage tolerance
      * @return success True if swap succeeded
      */
-    function _safeSwapTokens(address tokenIn, address tokenOut, uint256 amountIn, uint256 slippageBps) internal returns (bool success) {
+    function _safeSwapTokens(address tokenIn, address tokenOut, uint256 amountIn, uint256 slippageBps)
+        internal
+        returns (bool success)
+    {
         if (amountIn == 0) return true;
         if (tokenIn == tokenOut) return false;
 
         uint24 bestFee = DEFAULT_POOL_FEE;
         try this.getMostLiquidPool(tokenIn, tokenOut) returns (uint24 fee, address) {
             bestFee = fee;
-        } catch {
-        }
+        } catch {}
 
         uint256 expectedAmountOut;
         if (tokenOut == WETH_ADDRESS) {
@@ -720,30 +732,26 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
         }
 
         if (expectedAmountOut == 0) return false;
-        
-        uint256 amountOutMin = (expectedAmountOut * (TOTAL_WEIGHT_BASIS_POINTS - slippageBps)) / TOTAL_WEIGHT_BASIS_POINTS;
+
+        uint256 amountOutMin =
+            (expectedAmountOut * (TOTAL_WEIGHT_BASIS_POINTS - slippageBps)) / TOTAL_WEIGHT_BASIS_POINTS;
 
         address pool = uniswapV3Factory.getPool(tokenIn, tokenOut, bestFee);
         if (pool == address(0)) return false;
-        
+
         bool zeroForOne = tokenIn < tokenOut;
         bytes memory data = abi.encode(tokenIn, tokenOut, bestFee);
-        
-        uint160 sqrtPriceLimitX96 = zeroForOne 
-            ? uint160(4295128740)
-            : uint160(1461446703485210103287273052203988822378723970340);
-        
-        try IUniswapV3Pool(pool).swap(
-            address(this),
-            zeroForOne,
-            int256(amountIn),
-            sqrtPriceLimitX96,
-            data
-        ) returns (int256 amount0, int256 amount1) {
+
+        uint160 sqrtPriceLimitX96 =
+            zeroForOne ? uint160(4295128740) : uint160(1461446703485210103287273052203988822378723970340);
+
+        try IUniswapV3Pool(pool).swap(address(this), zeroForOne, int256(amountIn), sqrtPriceLimitX96, data) returns (
+            int256 amount0, int256 amount1
+        ) {
             uint256 amountOut = uint256(-(zeroForOne ? amount1 : amount0));
-            
+
             if (amountOut < amountOutMin) return false;
-            
+
             emit FundTokenSwapped(tokenIn, amountIn, tokenOut, amountOut);
             return true;
         } catch (bytes memory reason) {
@@ -781,7 +789,8 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
             address currentToken = allowedTokens[i];
             rebalanceInfos[i].token = currentToken;
             rebalanceInfos[i].currentBalance = _safeGetTokenBalance(currentToken);
-            rebalanceInfos[i].currentValueInAccountingAsset = _safeGetTokenValue(currentToken, rebalanceInfos[i].currentBalance);
+            rebalanceInfos[i].currentValueInAccountingAsset =
+                _safeGetTokenValue(currentToken, rebalanceInfos[i].currentBalance);
             rebalanceInfos[i].targetValueInAccountingAsset =
                 (navBeforeRebalanceAA * targetWeights[currentToken]) / TOTAL_WEIGHT_BASIS_POINTS;
             rebalanceInfos[i].deltaValueInAccountingAsset = int256(rebalanceInfos[i].targetValueInAccountingAsset)
@@ -802,11 +811,11 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
                     amountToSellInTokenUnits = 0;
                 }
                 if (amountToSellInTokenUnits == 0) continue;
-                
+
                 uint256 actualBalance = _safeGetTokenBalance(rebalanceInfos[i].token);
                 amountToSellInTokenUnits = Math.min(amountToSellInTokenUnits, actualBalance);
                 if (amountToSellInTokenUnits == 0) continue;
-                
+
                 _safeSwapTokens(rebalanceInfos[i].token, WETH_ADDRESS, amountToSellInTokenUnits, DEFAULT_SLIPPAGE_BPS);
             }
         }
@@ -816,7 +825,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
             _emitRebalanceEvent(navBeforeRebalanceAA);
             return;
         }
-        
+
         uint256 totalAccountingAssetNeededForBuys = 0;
         for (uint256 i = 0; i < rebalanceInfos.length; i++) {
             if (rebalanceInfos[i].deltaValueInAccountingAsset > 0) {
@@ -834,11 +843,11 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
                 uint256 actualAAToSpend = (
                     idealAAToSpend * Math.min(availableAccountingAssetForBuys, totalAccountingAssetNeededForBuys)
                 ) / totalAccountingAssetNeededForBuys;
-                
+
                 uint256 currentAABalance = _safeGetTokenBalance(WETH_ADDRESS);
                 actualAAToSpend = Math.min(actualAAToSpend, currentAABalance);
                 if (actualAAToSpend == 0) continue;
-                
+
                 _safeSwapTokens(WETH_ADDRESS, rebalanceInfos[i].token, actualAAToSpend, DEFAULT_SLIPPAGE_BPS);
             }
         }
@@ -892,25 +901,26 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
         }
 
         if (expectedAmountOut == 0) revert E6();
-        
-        uint256 amountOutMin = (expectedAmountOut * (TOTAL_WEIGHT_BASIS_POINTS - _slippageBps)) / TOTAL_WEIGHT_BASIS_POINTS;
+
+        uint256 amountOutMin =
+            (expectedAmountOut * (TOTAL_WEIGHT_BASIS_POINTS - _slippageBps)) / TOTAL_WEIGHT_BASIS_POINTS;
 
         // Get the pool for this token pair and fee
         address pool = uniswapV3Factory.getPool(_tokenIn, _tokenOut, bestFee);
         if (pool == address(0)) revert E6(); // Pool doesn't exist
-        
+
         // Determine swap direction
         bool zeroForOne = _tokenIn < _tokenOut;
-        
+
         // Prepare callback data
         bytes memory data = abi.encode(_tokenIn, _tokenOut, bestFee);
-        
+
         // Calculate price limit to avoid "SPL" (Slippage Protection Limit) error
         // Use the working price limits from our successful test
-        uint160 sqrtPriceLimitX96 = zeroForOne 
-            ? uint160(4295128740)  // MIN_SQRT_RATIO + 1 (working value)
+        uint160 sqrtPriceLimitX96 = zeroForOne
+            ? uint160(4295128740) // MIN_SQRT_RATIO + 1 (working value)
             : uint160(1461446703485210103287273052203988822378723970340); // MAX_SQRT_RATIO - 1 (working value)
-        
+
         // Execute the swap directly with the pool
         try IUniswapV3Pool(pool).swap(
             address(this), // recipient
@@ -920,10 +930,10 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
             data
         ) returns (int256 amount0, int256 amount1) {
             uint256 amountOut = uint256(-(zeroForOne ? amount1 : amount0));
-            
+
             // Check we received enough tokens
             if (amountOut < amountOutMin) revert E6();
-            
+
             emit FundTokenSwapped(_tokenIn, _amountIn, _tokenOut, amountOut);
         } catch (bytes memory reason) {
             // If swap fails, emit an event and revert with more context
@@ -931,7 +941,6 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
             revert E6(); // Swap failed
         }
     }
-
 
     /**
      * @notice Approves a token for spending if current allowance is insufficient
@@ -945,7 +954,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
             _tokenContract.forceApprove(_spender, _amount);
         }
     }
-    
+
     /**
      * @notice Gets the value of a token amount in WETH units (accounting asset)
      * @dev Uses the optimized WETH-specific TWAP Oracle function
@@ -974,7 +983,6 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
         }
     }
 
-    
     /**
      * @notice Gets the USDC value of a given WETH amount
      * @dev Uses the optimized WETH-specific TWAP Oracle function
@@ -983,7 +991,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
      */
     function _getWETHValueInUSDC(uint256 _wethAmount) internal view returns (uint256) {
         if (_wethAmount == 0) return 0;
-        
+
         // Use the optimized WETH helper function with fallback fee tiers
         try this.getWETHValueInToken(USDC_ADDRESS, _wethAmount, DEFAULT_POOL_FEE) returns (uint256 value) {
             return value;
@@ -1018,7 +1026,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
             address currentToken = allowedTokens[i];
             uint256 tokenBalance = IERC20(currentToken).balanceOf(address(this));
             uint256 tokenValueInAA = _getTokenValueInAccountingAsset(currentToken, tokenBalance);
-            
+
             // This check `if (currentNAV == 0) return (true, TOTAL_WEIGHT_BASIS_POINTS);` was inside the loop
             // and would cause issues if the first token had 0 value but NAV was non-zero due to other tokens.
             // The initial currentNAV == 0 check at the function start handles the main case.
@@ -1027,7 +1035,9 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
 
             uint256 actualWeightBPS = (tokenValueInAA * TOTAL_WEIGHT_BASIS_POINTS) / currentNAV;
             uint256 targetWeightBPS = targetWeights[currentToken];
-            uint256 deviation = actualWeightBPS > targetWeightBPS ? actualWeightBPS - targetWeightBPS : targetWeightBPS - actualWeightBPS;
+            uint256 deviation = actualWeightBPS > targetWeightBPS
+                ? actualWeightBPS - targetWeightBPS
+                : targetWeightBPS - actualWeightBPS;
             if (deviation > maxDeviationBPS) maxDeviationBPS = deviation;
             if (deviation > REBALANCE_DEVIATION_THRESHOLD_BPS) needsRebalance = true;
         }
@@ -1039,28 +1049,24 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
     /**
      * @notice Callback function required by Uniswap V3 for swap execution
      * @dev This function is called by the Uniswap V3 pool during swap execution
-     * @param amount0Delta Change in token0 balance 
+     * @param amount0Delta Change in token0 balance
      * @param amount1Delta Change in token1 balance
      * @param data Encoded swap data
      */
-    function uniswapV3SwapCallback(
-        int256 amount0Delta,
-        int256 amount1Delta,
-        bytes calldata data
-    ) external override {
+    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external override {
         require(amount0Delta > 0 || amount1Delta > 0, "Invalid swap");
-        
+
         // Decode the data to get token addresses and fee
         (address tokenIn, address tokenOut, uint24 fee) = abi.decode(data, (address, address, uint24));
-        
+
         // Verify the callback is from a legitimate Uniswap V3 pool
         address expectedPool = uniswapV3Factory.getPool(tokenIn, tokenOut, fee);
         require(msg.sender == expectedPool, "Invalid callback sender");
-        
+
         // Determine which token we need to pay and how much
         address tokenToPay;
         uint256 amountToPay;
-        
+
         if (amount0Delta > 0) {
             tokenToPay = tokenIn < tokenOut ? tokenIn : tokenOut;
             amountToPay = uint256(amount0Delta);
@@ -1068,7 +1074,7 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
             tokenToPay = tokenIn < tokenOut ? tokenOut : tokenIn;
             amountToPay = uint256(amount1Delta);
         }
-        
+
         // Transfer the required tokens to the pool
         IERC20(tokenToPay).safeTransfer(msg.sender, amountToPay);
     }
@@ -1077,5 +1083,4 @@ contract WhackRockFund is IWhackRockFund, ERC20, Ownable, UniswapV3TWAPOracle, I
     function ACCOUNTING_ASSET() external view returns (address) {
         return WETH_ADDRESS;
     }
-
 }
