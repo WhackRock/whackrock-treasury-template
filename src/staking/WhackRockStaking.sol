@@ -28,6 +28,10 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @notice This contract allows users to stake WROCK tokens and earn points based on lock duration
  * @dev Implements a time-weighted staking mechanism with multipliers for longer lock periods
  * Points can be claimed and redeemed through an external PointsRedeemer contract
+ * 
+ * @dev Token Compatibility: This contract supports fee-on-transfer and deflationary tokens.
+ * The stake function measures the actual amount of tokens received to handle tokens that
+ * deduct fees during transfers. This prevents accounting mismatches that could lock user funds.
  */
 contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
@@ -44,8 +48,8 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     /// @notice Timelock delay for sensitive owner functions (48 hours)
     uint256 public constant TIMELOCK_DELAY = 48 hours;
     
-    /// @notice Base rate for earning points (100 points per token per day)
-    uint256 public constant BASE_POINTS_RATE = 100;
+    /// @notice Base rate: 1 token = 1 point over 365 days
+    uint256 public constant DAYS_PER_YEAR = 365;
     
     /**
      * @notice Struct containing staking information for each user
@@ -179,7 +183,9 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     
     /**
      * @notice Stakes tokens for a specified lock duration
-     * @dev Users can add to existing stakes but cannot reduce lock duration
+     * @dev Users can add to existing stakes but cannot reduce lock duration.
+     *      When adding to existing stakes, the start time is reset to prevent lock-up bypass.
+     *      This ensures all tokens are locked for the full duration from the time of deposit.
      * @param _amount Amount of tokens to stake
      * @param _lockDuration Duration to lock tokens (minimum 180 days)
      */
@@ -193,6 +199,11 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
         if (userStake.amount > 0) {
             _updatePoints(msg.sender);
             require(_lockDuration >= userStake.lockDuration, "Cannot reduce lock duration");
+            
+            // Reset start time when adding to existing stake to prevent lock-up bypass
+            // This ensures all tokens are locked for the full duration from the time of deposit
+            userStake.startTime = block.timestamp;
+            userStake.lastClaimTime = block.timestamp;
             userStake.lockDuration = _lockDuration;
         } else {
             userStake.startTime = block.timestamp;
@@ -200,22 +211,30 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
             userStake.lockDuration = _lockDuration;
         }
         
-        // Effects
-        userStake.amount += _amount;
-        totalStaked += _amount;
+        // Measure balance before transfer
+        uint256 balanceBefore = stakingToken.balanceOf(address(this));
         
-        // Interactions
+        // Interactions - transfer tokens first
         stakingToken.safeTransferFrom(msg.sender, address(this), _amount);
-        uint256 multiplier = _getMultiplier(_lockDuration);
+        
+        // Measure actual amount received (handles fee-on-transfer tokens)
+        uint256 actualAmount = stakingToken.balanceOf(address(this)) - balanceBefore;
+        require(actualAmount > 0, "No tokens received");
+        
+        // Effects - update state with actual amount received
+        userStake.amount += actualAmount;
+        totalStaked += actualAmount;
+        
+        uint256 bonusMultiplier = _getBonusMultiplier(_lockDuration);
         uint256 unlockTime = userStake.startTime + userStake.lockDuration;
         
         emit Staked(
             msg.sender, 
-            _amount, 
+            actualAmount, 
             userStake.amount,
             _lockDuration,
             unlockTime,
-            multiplier
+            bonusMultiplier
         );
     }
     
@@ -273,7 +292,7 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     
     /**
      * @notice Internal function to calculate and update user's accumulated points
-     * @dev Called before any stake modification or point claim
+     * @dev New simplified calculation: 1 token = 1 point over 365 days + bonus
      * @param _user Address of the user to update points for
      */
     function _updatePoints(address _user) internal {
@@ -283,8 +302,14 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
         uint256 timeElapsed = block.timestamp - userStake.lastClaimTime;
         if (timeElapsed == 0) return;
         
-        uint256 multiplier = _getMultiplier(userStake.lockDuration);
-        uint256 newPoints = (userStake.amount * timeElapsed * BASE_POINTS_RATE * multiplier) / (1 days * 100);
+        // Base points: proportional to 365 days (1 token = 1 point over 365 days)
+        uint256 basePoints = (userStake.amount * timeElapsed) / (DAYS_PER_YEAR * 1 days);
+        
+        // Calculate bonus points
+        uint256 bonusMultiplier = _getBonusMultiplier(userStake.lockDuration);
+        uint256 bonusPoints = (basePoints * bonusMultiplier) / 100;
+        
+        uint256 newPoints = basePoints + bonusPoints;
         
         userStake.accumulatedPoints += newPoints;
         userStake.lastClaimTime = block.timestamp;
@@ -295,16 +320,16 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
     }
     
     /**
-     * @notice Calculates the points multiplier based on lock duration
-     * @dev Longer lock durations receive higher multipliers
+     * @notice Calculates the bonus multiplier based on lock duration
+     * @dev Longer lock durations receive bonus points
      * @param _lockDuration The duration tokens are locked for
-     * @return The multiplier value (100 = 1x, 200 = 2x)
+     * @return The bonus multiplier (0 = no bonus, 50 = 50% bonus, 100 = 100% bonus)
      */
-    function _getMultiplier(uint256 _lockDuration) internal pure returns (uint256) {
-        if (_lockDuration >= 365 days) return 200; // 2x multiplier
-        if (_lockDuration >= 270 days) return 150; // 1.5x multiplier
-        if (_lockDuration >= 180 days) return 100; // 1x multiplier
-        return 100;
+    function _getBonusMultiplier(uint256 _lockDuration) internal pure returns (uint256) {
+        if (_lockDuration >= 365 days) return 100; // 100% bonus for 1 year
+        if (_lockDuration >= 270 days) return 50;  // 50% bonus for 9 months
+        if (_lockDuration >= 180 days) return 0;   // No bonus for 6 months
+        return 0;
     }
     
     /**
@@ -330,8 +355,15 @@ contract WhackRockStaking is Ownable, ReentrancyGuard, Pausable {
         
         if (amount > 0) {
             uint256 timeElapsed = block.timestamp - userStake.lastClaimTime;
-            uint256 multiplier = _getMultiplier(userStake.lockDuration);
-            uint256 pendingPoints = (amount * timeElapsed * BASE_POINTS_RATE * multiplier) / (1 days * 100);
+            
+            // Base points: proportional to 365 days (1 token = 1 point over 365 days)
+            uint256 basePoints = (amount * timeElapsed) / (DAYS_PER_YEAR * 1 days);
+            
+            // Calculate bonus points
+            uint256 bonusMultiplier = _getBonusMultiplier(userStake.lockDuration);
+            uint256 bonusPoints = (basePoints * bonusMultiplier) / 100;
+            
+            uint256 pendingPoints = basePoints + bonusPoints;
             currentPoints = userStake.accumulatedPoints + pendingPoints;
         }
         
